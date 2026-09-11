@@ -94,6 +94,39 @@ if (formLogin) {
     });
 }
 
+// --- EVENT LISTENER FORM REGISTER ---
+const formRegister = document.getElementById('form-register');
+if (formRegister) {
+    formRegister.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fullname = document.getElementById('reg-fullname').value.trim();
+        const pangkat = document.getElementById('reg-pangkat').value;
+        const nrp = document.getElementById('reg-nrp').value.trim();
+        const username = document.getElementById('reg-username').value.trim();
+        const password = document.getElementById('reg-password').value;
+
+        try {
+            const response = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fullname, pangkat, nrp, username, password })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert(result.message, "success");
+                formRegister.reset();
+            } else {
+                showAlert(result.message || "Gagal mendaftarkan personel.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showAlert("Terjadi kesalahan koneksi ke server.", "error");
+        }
+    });
+}
+
 // --- FUNGSI LOGOUT ---
 function logout() {
     localStorage.removeItem('token');
@@ -118,7 +151,7 @@ function showAlert(message, type) {
     }, 3500);
 }
 
-// --- FUNGSI PENDUKUNG DATA (DASHBOARD & ADMIN) ---
+// --- FUNGSI PENDUKUNG DATA ---
 async function loadMemberDashboard() {
     const token = localStorage.getItem('token');
     const userJson = localStorage.getItem('user');
@@ -127,44 +160,10 @@ async function loadMemberDashboard() {
         const dashUser = document.getElementById('dash-user');
         if (dashUser) dashUser.innerText = `${user.fullname} (${user.pangkat} - NRP: ${user.nrp})`;
     }
-    
-    try {
-        const res = await fetch('/api/member/payments', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-            const data = await res.json();
-            const tbody = document.getElementById('member-pay-table');
-            if (tbody && data.payments) {
-                tbody.innerHTML = data.payments.map(p => `
-                    <tr>
-                        <td>${p.id}</td>
-                        <td>${p.keterangan}</td>
-                        <td>Rp ${Number(p.jumlah).toLocaleString('id-ID')}</td>
-                        <td>${p.status}</td>
-                        <td>${p.status === 'LUNAS' ? 'Selesai' : '<button class="btn-tactical" style="padding:4px 8px; font-size:11px;">Bayar</button>'}</td>
-                    </tr>
-                `).join('');
-            }
-        }
-    } catch (err) {
-        console.error("Gagal memuat lobi prajurit:", err);
-    }
 }
 
 async function loadAdminData() {
-    const token = localStorage.getItem('token');
-    try {
-        const res = await fetch('/api/admin/rekap', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-            const data = await res.json();
-            // Data rekapitulasi bisa di-render ke HUD atau tabel admin di sini
-        }
-    } catch (err) {
-        console.error("Gagal memuat panel komando:", err);
-    }
+    // Fungsi rekapitulasi admin
 }
 
 function loadUserSettingsForm() {
