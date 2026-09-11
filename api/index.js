@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Inisialisasi Database & Pembersihan Akun Demo Sekali Pakai (Production Clean)
+// Inisialisasi Database
 async function initDatabase() {
     try {
         await pool.query(`
@@ -58,25 +58,27 @@ async function initDatabase() {
             );
         `);
 
-        // Bersihkan seluruh akun demo & riwayat simulasi lama (Dieksekusi tepat 1x untuk membersihkan database Neon)
+        // Bersihkan akun demo sekali pakai pada instalasi awal
         const setupCheck = await pool.query("SELECT * FROM system_setup WHERE key = 'clean_demo_production_v3'");
         if (setupCheck.rowCount === 0) {
             await pool.query("DELETE FROM payments;");
             await pool.query("DELETE FROM users WHERE LOWER(username) != 'admin';");
             await pool.query("INSERT INTO system_setup (key, value) VALUES ('clean_demo_production_v3', 'done');");
-            console.log('[TNI KIPAN A] Seluruh akun demo & data simulasi dibersihkan. Hanya Komando Admin yang tersisa.');
+            console.log('[TNI KIPAN A] Data simulasi dibersihkan. Menyisakan akun Komando.');
         }
 
-        // Kunci akun Komandan resmi
-        const adminHash = await bcrypt.hash('admin123', 10);
+        // Buat akun admin bawaan hanya jika akun belum terdaftar
         const check = await pool.query("SELECT id FROM users WHERE LOWER(username) = 'admin'");
         if (check.rowCount === 0) {
+            const adminHash = await bcrypt.hash('admin123', 10);
             await pool.query(
                 "INSERT INTO users (fullname, pangkat, nrp, username, password, role) VALUES ($1, $2, $3, $4, $5, 'admin')",
                 ['Komandan Kompi A (Danki)', 'Kapten Inf', '11030012345', 'admin', adminHash]
             );
+            console.log('[TNI KIPAN A] Akun Admin awal dibuat (user: admin, pass: admin123).');
         } else {
-            await pool.query("UPDATE users SET password = $1, role = 'admin' WHERE LOWER(username) = 'admin'", [adminHash]);
+            // Memastikan hak akses tetap admin tanpa mereset password yang telah diubah pengguna
+            await pool.query("UPDATE users SET role = 'admin' WHERE LOWER(username) = 'admin'");
         }
         console.log('[TNI KIPAN A] Server Produksi Siap. Database terhubung.');
     } catch (err) {
@@ -201,7 +203,7 @@ app.get('/api/payments/:id/status', verifyToken, async (req, res) => {
     }
 });
 
-// Endpoint Webhook Otomatis untuk Integrasi Payment Gateway (Midtrans, Xendit, Tripay, Moota)
+// Endpoint Webhook Otomatis untuk Integrasi Payment Gateway
 app.post('/api/payment/webhook', async (req, res) => {
     try {
         const body = req.body || {};
@@ -221,6 +223,7 @@ app.post('/api/payment/webhook', async (req, res) => {
     }
 });
 
+// Pembaruan Akun Mandiri (Termasuk Akun Admin)
 app.put('/api/user/settings', verifyToken, async (req, res) => {
     const { fullname, pangkat, nrp, new_password } = req.body;
     try {
