@@ -6,10 +6,12 @@ const path = require('path');
 
 const app = express();
 
-// Konfigurasi koneksi database PostgreSQL (Neon)
+// Konfigurasi koneksi database PostgreSQL (Neon) yang disesuaikan untuk Serverless
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'kipan_a_tni_ad_super_secret_key_2026';
@@ -138,7 +140,7 @@ app.post('/api/login', async (req, res) => {
         });
     } catch (err) {
         console.error('[LOGIN ERROR]', err);
-        res.status(500).json({ success: false, message: "Terjadi kesalahan pada server database." });
+        res.status(500).json({ success: false, message: "Terjadi kesalahan pada server database: " + err.message });
     }
 });
 
