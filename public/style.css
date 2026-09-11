@@ -1,570 +1,245 @@
 :root {
-    --tni-darkest: #040705;
-    --tni-dark: #090f0c;
-    --tni-card: #0e1712;
-    --tni-card-inner: #132019;
-    --tni-army: #193622;
-    --tni-army-light: #285435;
-    --tni-gold: #ebb338;
-    --tni-gold-glow: rgba(235, 179, 56, 0.3);
-    --tni-radar-neon: #00ff66;
-    --tni-radar-glow: rgba(0, 255, 102, 0.25);
-    --text-white: #f5f9f6;
-    --text-muted: #7b9983;
-    --border-camo: #23472e;
-    --border-gold: #a67c1e;
-    --danger-red: #ff3333;
-    --danger-glow: rgba(255, 51, 51, 0.3);
+    --tni-darkest: #050a07;
+    --tni-dark: #0c1a12;
+    --tni-green: #1b4d3e;
+    --tni-radar-neon: #2ecc71;
+    --tni-gold: #f39c12;
+    --text-white: #e0f2fe;
+    --danger-red: #e74c3c;
+    --border-gold: rgba(243, 156, 18, 0.4);
+    --border-camo: rgba(46, 204, 113, 0.3);
 }
 
 * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    font-family: 'Courier New', 'Consolas', monospace;
 }
 
 body {
     background-color: var(--tni-darkest);
     color: var(--text-white);
-    padding: 20px;
+    font-family: 'Courier New', Courier, monospace;
+    padding: 10px;
     display: flex;
     justify-content: center;
-    background-image: 
-        linear-gradient(rgba(9, 15, 12, 0.92), rgba(4, 7, 5, 0.96)),
-        radial-gradient(#1c3a25 15%, transparent 16%),
-        radial-gradient(#14291a 15%, transparent 16%);
-    background-size: 100% 100%, 28px 28px, 28px 28px;
-    background-position: 0 0, 0 0, 14px 14px;
     min-height: 100vh;
+    overflow-x: hidden;
 }
 
 .container {
     width: 100%;
-    max-width: 1100px;
-    background: var(--tni-card);
-    border: 2px solid var(--border-camo);
-    box-shadow: 0 0 35px rgba(0, 0, 0, 0.95), inset 0 0 15px rgba(0, 255, 102, 0.05);
-    padding: 30px;
-    border-radius: 4px;
-    position: relative;
+    max-width: 900px;
+    background: var(--tni-dark);
+    border: 1px solid var(--border-camo);
+    padding: 15px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
 }
 
-.container::before {
-    content: "COMMAND TERMINAL // KIPAN A INFANTERI";
-    position: absolute;
-    top: -12px;
-    left: 20px;
-    background: var(--tni-army);
-    color: var(--tni-gold);
-    font-size: 10px;
-    font-weight: bold;
-    letter-spacing: 2px;
-    padding: 2px 10px;
-    border: 1px solid var(--border-gold);
-}
-
+/* HEADER RESPONSIF */
 .header-tni {
     text-align: center;
-    border-bottom: 2px solid var(--border-gold);
-    padding-bottom: 20px;
-    margin-bottom: 25px;
+    border-bottom: 2px dashed var(--tni-radar-neon);
+    padding-bottom: 15px;
+    margin-bottom: 15px;
 }
 
 .header-tni .emblem {
     font-size: 11px;
-    font-weight: 900;
-    letter-spacing: 4px;
-    color: var(--tni-radar-neon);
-    text-shadow: 0 0 8px var(--tni-radar-glow);
+    color: var(--tni-gold);
+    letter-spacing: 1px;
     margin-bottom: 5px;
 }
 
 .header-tni h1 {
+    font-size: 20px;
     color: var(--tni-gold);
-    font-size: 28px;
-    font-weight: 900;
-    letter-spacing: 4px;
     text-transform: uppercase;
-    text-shadow: 0 0 12px var(--tni-gold-glow);
+    word-break: break-word;
 }
 
 .header-tni p {
-    color: var(--text-muted);
-    font-size: 12px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    margin-top: 6px;
+    font-size: 10px;
+    color: var(--text-white);
+    opacity: 0.8;
+    margin-top: 5px;
 }
 
+/* NAVBAR MOBILE FRIENDLY */
 .nav {
     display: flex;
-    gap: 10px;
-    margin-bottom: 25px;
-    background: #050a07;
-    padding: 10px;
-    border: 1px solid var(--border-camo);
     flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 15px;
+    justify-content: center;
 }
 
 .nav button {
-    background: #09120c;
-    color: var(--tni-gold);
-    border: 1px solid var(--border-camo);
-    padding: 10px 16px;
-    cursor: pointer;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    font-size: 12px;
-    transition: 0.2s;
-}
-
-.nav button:hover, .nav button.active {
-    background: var(--tni-gold);
-    color: #000;
-    box-shadow: 0 0 12px var(--tni-gold-glow);
-    border-color: var(--tni-gold);
-}
-
-.hud-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 15px;
-    margin-bottom: 25px;
-}
-
-.hud-card {
-    background: var(--tni-card-inner);
-    border: 1px solid var(--border-camo);
-    border-left: 5px solid var(--tni-gold);
-    padding: 18px;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
-}
-
-.hud-card.green {
-    border-left-color: var(--tni-radar-neon);
-    box-shadow: inset 0 0 10px rgba(0, 255, 102, 0.05);
-}
-
-.hud-card.red {
-    border-left-color: var(--danger-red);
-    box-shadow: inset 0 0 10px rgba(255, 51, 51, 0.05);
-}
-
-.hud-card .title {
-    font-size: 11px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    font-weight: bold;
-}
-
-.hud-card .val {
-    font-size: 24px;
-    font-weight: 900;
+    flex: 1 1 auto;
+    min-width: 110px;
+    padding: 8px 10px;
+    background: #09130d;
+    border: 1px solid var(--tni-radar-neon);
     color: var(--text-white);
-    margin-top: 8px;
-    letter-spacing: 1px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
 }
 
-.hud-card.green .val { color: var(--tni-radar-neon); }
-.hud-card.red .val { color: var(--danger-red); }
-
-.export-btn-group {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
+.nav button:hover, .nav button:active {
+    background: var(--tni-green);
+    color: var(--tni-gold);
 }
 
-.btn-excel {
-    background: #143820 !important;
-    color: var(--tni-radar-neon) !important;
-    border-color: var(--tni-radar-neon) !important;
-}
-
-.btn-print {
-    background: #473a11 !important;
-    color: var(--tni-gold) !important;
-    border-color: var(--tni-gold) !important;
-}
-
-.print-only-header {
-    display: none;
-}
-
+/* SECTION BOX */
 .section-box {
     display: none;
-    background: #09120c;
-    border: 1px solid var(--border-camo);
-    padding: 25px;
-    margin-bottom: 20px;
+    border: 1px solid var(--border-gold);
+    padding: 12px;
+    background: rgba(5, 10, 7, 0.95);
 }
 
 .section-box.active {
     display: block;
 }
 
-h2, h3 {
+.section-box h2 {
+    font-size: 14px;
     color: var(--tni-gold);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    margin-bottom: 16px;
-    font-size: 16px;
-    border-bottom: 1px dashed var(--border-camo);
-    padding-bottom: 8px;
-}
-
-form {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    margin-bottom: 25px;
-}
-
-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-weight: bold;
-    letter-spacing: 1.5px;
-}
-
-input, select, button {
-    padding: 12px 14px;
-    background: #050a07;
-    border: 1px solid var(--border-camo);
-    color: var(--tni-gold);
-    font-size: 13px;
-    outline: none;
-}
-
-input:focus, select:focus {
-    border-color: var(--tni-gold);
-    box-shadow: 0 0 10px var(--tni-gold-glow);
-}
-
-button.btn-tactical {
-    background: var(--tni-army);
-    color: var(--tni-radar-neon);
-    font-weight: 900;
-    cursor: pointer;
-    border: 1px solid var(--tni-radar-neon);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    transition: 0.2s;
-}
-
-button.btn-tactical:hover {
-    background: var(--tni-radar-neon);
-    color: #000;
-    box-shadow: 0 0 15px var(--tni-radar-glow);
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-    margin-bottom: 25px;
-}
-
-th, td {
-    border: 1px solid var(--border-camo);
-    padding: 12px 10px;
-    text-align: left;
-    font-size: 12px;
-}
-
-th {
-    background: #050a07;
-    color: var(--tni-gold);
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    font-size: 11px;
-}
-
-.badge {
-    padding: 4px 10px;
-    font-size: 10px;
-    font-weight: bold;
-    letter-spacing: 1px;
-    display: inline-block;
-    border-radius: 2px;
-}
-
-.badge-lunas {
-    background: var(--tni-radar-neon);
-    color: #000;
-    box-shadow: 0 0 8px var(--tni-radar-glow);
-}
-
-.badge-menunggak {
-    background: var(--danger-red);
-    color: #fff;
-    box-shadow: 0 0 8px var(--danger-glow);
-}
-
-.btn-action {
-    padding: 6px 12px;
-    font-size: 11px;
-    background: var(--tni-army);
-    color: var(--tni-gold);
-    border: 1px solid var(--border-gold);
-    cursor: pointer;
-    font-weight: bold;
-    letter-spacing: 1px;
-}
-
-.btn-action:hover {
-    background: var(--tni-gold);
-    color: #000;
-}
-
-.btn-danger {
-    background: #330b0b;
-    color: var(--danger-red);
-    border-color: var(--danger-red);
-}
-
-.btn-danger:hover {
-    background: var(--danger-red);
-    color: #fff;
-}
-
-.alert {
-    padding: 14px;
-    background: rgba(235, 179, 56, 0.12);
-    border: 1px solid var(--tni-gold);
-    color: var(--tni-gold);
-    margin-bottom: 20px;
-    font-weight: bold;
-    letter-spacing: 1px;
-    font-size: 12px;
-}
-
-.qris-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.88);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 9999;
-    backdrop-filter: blur(4px);
-}
-
-.qris-box {
-    background: var(--tni-card);
-    border: 2px solid var(--tni-gold);
-    box-shadow: 0 0 30px var(--tni-gold-glow);
-    width: 90%;
-    max-width: 400px;
-    padding: 25px;
-    text-align: center;
-    border-radius: 4px;
-}
-
-.qris-header h3 {
-    color: var(--tni-gold);
-    margin-bottom: 4px;
-    border: none;
-    padding: 0;
-}
-
-.qris-header p {
-    font-size: 11px;
-    color: var(--tni-radar-neon);
-    letter-spacing: 2px;
+    border-bottom: 1px solid var(--border-gold);
+    padding-bottom: 6px;
     margin-bottom: 12px;
 }
 
-.qris-frame {
-    background: #ffffff;
-    padding: 12px;
-    display: inline-block;
-    border: 3px solid var(--border-gold);
-    border-radius: 4px;
-}
-
-.qris-frame img {
-    display: block;
-    width: 200px;
-    height: 200px;
-}
-
-.bank-details-box {
-    margin-top: 12px;
-    background: #050a07;
-    border: 1px dashed var(--border-gold);
-    padding: 10px;
-    text-align: left;
-    font-size: 11px;
-    line-height: 1.6;
-}
-
-.radar-status {
-    margin-top: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-size: 11px;
+.section-box h3 {
+    font-size: 12px;
     color: var(--tni-radar-neon);
-    background: rgba(0, 255, 102, 0.08);
-    padding: 8px;
+    margin: 12px 0 6px 0;
+}
+
+/* FORM & INPUT */
+label {
+    display: block;
+    font-size: 11px;
+    color: var(--tni-gold);
+    margin-top: 10px;
+    margin-bottom: 4px;
+}
+
+input, select {
+    width: 100%;
+    padding: 10px;
+    background: #030604;
     border: 1px solid var(--border-camo);
+    color: var(--text-white);
+    font-family: inherit;
+    font-size: 14px; /* Ukuran font minimal 16px/14px agar tidak zoom otomatis di HP */
+    border-radius: 0;
 }
 
-.radar-dot {
-    width: 10px;
-    height: 10px;
-    background-color: var(--tni-radar-neon);
-    border-radius: 50%;
-    display: inline-block;
-    box-shadow: 0 0 10px var(--tni-radar-neon);
-    animation: pulseRadar 1.2s infinite;
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--tni-gold);
 }
 
-@keyframes pulseRadar {
-    0% { transform: scale(0.85); opacity: 0.5; }
-    50% { transform: scale(1.2); opacity: 1; }
-    100% { transform: scale(0.85); opacity: 0.5; }
+.btn-tactical {
+    width: 100%;
+    margin-top: 15px;
+    padding: 12px;
+    background: var(--tni-green);
+    border: 1px solid var(--tni-radar-neon);
+    color: #fff;
+    font-weight: bold;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-transform: uppercase;
 }
 
-.qris-footer {
-    display: flex;
+.btn-tactical:active {
+    background: var(--tni-radar-neon);
+    color: #000;
+}
+
+/* HUD GRID STATISTIK */
+.hud-grid {
+    display: grid;
+    grid-template-columns: 1fr; /* Default 1 kolom untuk HP */
     gap: 10px;
-    justify-content: center;
-    margin-top: 16px;
+    margin-bottom: 15px;
 }
 
-@media print {
-    body {
-        background: #ffffff !important;
-        color: #000000 !important;
-        padding: 0 !important;
-    }
-
-    .container {
-        border: none !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-        max-width: 100% !important;
-        background: transparent !important;
-    }
-
-    .container::before,
-    .nav,
-    .header-tni,
-    .alert,
-    .export-btn-group,
-    #form-config-payment,
-    #form-admin-create-bill,
-    #box-admin-edit-user,
-    .btn-action,
-    .btn-tactical,
-    .qris-overlay,
-    #sec-auth,
-    #sec-dashboard,
-    #sec-settings {
-        display: none !important;
-    }
-
-    #sec-admin {
-        display: block !important;
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-    }
-
-    .print-only-header {
-        display: block !important;
-        text-align: center;
-        margin-bottom: 20px;
-        color: #000 !important;
-    }
-
-    .print-only-header h3 {
-        font-size: 13px !important;
-        margin: 0 !important;
-        border: none !important;
-        color: #000 !important;
-    }
-
-    .print-only-header h2 {
-        font-size: 18px !important;
-        margin: 4px 0 !important;
-        border: none !important;
-        color: #000 !important;
-        font-weight: 900 !important;
-    }
-
-    .print-only-header p {
-        font-size: 11px !important;
-        margin: 0 !important;
-        letter-spacing: 1px;
-    }
-
-    .print-line {
-        border-bottom: 3px double #000;
-        margin-top: 8px;
-        margin-bottom: 15px;
-    }
-
+@media (min-width: 600px) {
     .hud-grid {
-        display: flex !important;
-        justify-content: space-between !important;
-        border: 1px solid #000 !important;
-        padding: 10px !important;
-        margin-bottom: 20px !important;
+        grid-template-columns: repeat(2, 1fr); /* 2 kolom untuk tablet/layar sedang */
     }
+}
 
-    .hud-card {
-        background: #fff !important;
-        border: none !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-    }
+.hud-card {
+    background: #08110c;
+    border: 1px solid var(--border-camo);
+    padding: 12px;
+    text-align: center;
+}
 
-    .hud-card .title, .hud-card .val {
-        color: #000 !important;
-    }
+.hud-card.green { border-color: var(--tni-radar-neon); }
+.hud-card.red { border-color: var(--danger-red); }
 
-    h2, h3 {
-        color: #000 !important;
-        border-bottom: 1px solid #000 !important;
-        font-size: 13px !important;
-        margin-top: 20px !important;
-    }
+.hud-card .title {
+    font-size: 11px;
+    color: var(--text-white);
+    opacity: 0.8;
+}
 
-    table {
-        width: 100% !important;
-        border-collapse: collapse !important;
-        margin-bottom: 25px !important;
-    }
+.hud-card .val {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--tni-gold);
+    margin-top: 5px;
+}
 
-    th, td {
-        border: 1px solid #000 !important;
-        color: #000 !important;
-        padding: 6px 8px !important;
-        background: transparent !important;
-        font-size: 11px !important;
-    }
+/* TABEL RESPONSIF (Bisa digeser horizontal di HP) */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 11px;
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+}
 
-    th {
-        background-color: #eee !important;
-        font-weight: bold !important;
-        text-transform: uppercase;
-    }
+th, td {
+    border: 1px solid rgba(46, 204, 113, 0.2);
+    padding: 8px;
+    text-align: left;
+}
 
-    .badge {
-        border: 1px solid #000 !important;
-        color: #000 !important;
-        background: transparent !important;
-        box-shadow: none !important;
-        padding: 2px 6px !important;
+th {
+    background: #09140e;
+    color: var(--tni-gold);
+}
+
+/* ALERT */
+.alert {
+    padding: 10px;
+    margin-bottom: 12px;
+    font-size: 11px;
+    border: 1px solid;
+    text-align: center;
+}
+
+/* FORM GRID KHUSUS ADMIN */
+.admin-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+@media (min-width: 600px) {
+    .admin-grid-2 {
+        grid-template-columns: 1fr 1fr;
     }
 }
