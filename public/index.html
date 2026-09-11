@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KIPAN A - KOMANDO KEUANGAN MILITER</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Pustaka Pembuat File Asli Excel (.xlsx) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <!-- HEADER KIPAN A -->
+        <div class="header-tni">
+            <div class="emblem">KOMPI SENAPAN A // YONIF INFANTERI TAKTIS</div>
+            <h1>KOMPI SENAPAN A (KIPAN A)</h1>
+            <p>SISTEM TAKTIS ADMINISTRASI KEUANGAN & PEMBAYARAN IURAN PRAJURIT</p>
+        </div>
+
+        <!-- NAVBAR -->
+        <div class="nav" id="main-nav">
+            <button onclick="navigate('sec-auth')" id="nav-auth">Masuk Markas</button>
+            <button onclick="navigate('sec-dashboard')" id="nav-dashboard" style="display:none;">Lobi Prajurit</button>
+            <button onclick="navigate('sec-settings')" id="nav-settings" style="display:none;">Setting Akun</button>
+            <button onclick="navigate('sec-admin')" id="nav-admin" style="display:none;">Panel Komando (Admin)</button>
+            <button onclick="logout()" id="nav-logout" style="display:none; color: var(--danger-red); border-color: var(--danger-red);">Keluar</button>
+        </div>
+
+        <div id="alert-box" class="alert" style="display:none;"></div>
+
+        <!-- 1. OTENTIKASI -->
+        <div id="sec-auth" class="section-box active">
+            <h2>MARKAS OTENTIKASI PRAJURIT</h2>
+            <form id="form-login">
+                <h3>LOGIN APEL PRAJURIT</h3>
+                <label>NRP / USERNAME:</label>
+                <input type="text" id="log-username" placeholder="Masukkan Username atau NRP" required autocomplete="off">
+                <label>KATA SANDI:</label>
+                <input type="password" id="log-password" placeholder="••••••••" required>
+                <button type="submit" class="btn-tactical">MASUK MARKAS KIPAN A</button>
+            </form>
+
+            <form id="form-register">
+                <h3>PENDAFTARAN PERSONEL BARU</h3>
+                <label>NAMA LENGKAP:</label>
+                <input type="text" id="reg-fullname" placeholder="Contoh: Andre Saputra" required>
+                <label>PANGKAT MILITER:</label>
+                <select id="reg-pangkat">
+                    <option value="Prada">Prada (Prajurit Dua)</option>
+                    <option value="Pratu">Pratu (Prajurit Satu)</option>
+                    <option value="Praka">Praka (Prajurit Kepala)</option>
+                    <option value="Kopda">Kopda (Kopral Dua)</option>
+                    <option value="Koptu">Koptu (Kopral Satu)</option>
+                    <option value="Serda">Serda (Sersan Dua)</option>
+                    <option value="Sertu">Sertu (Sersan Satu)</option>
+                </select>
+                <label>NRP (NOMOR REGISTRASI PRAJURIT):</label>
+                <input type="text" id="reg-nrp" placeholder="Contoh: 3118029182" required>
+                <label>USERNAME:</label>
+                <input type="text" id="reg-username" placeholder="Contoh: andre12" required>
+                <label>KATA SANDI:</label>
+                <input type="password" id="reg-password" placeholder="••••••••" required>
+                <button type="submit" class="btn-tactical">DAFTAR PERSONEL KOMPI</button>
+            </form>
+        </div>
+
+        <!-- 2. DASHBOARD PRAJURIT -->
+        <div id="sec-dashboard" class="section-box">
+            <h2>LOBI PRAJURIT</h2>
+            <p style="margin-bottom: 20px;">Personel Aktif: <strong id="dash-user" style="color:var(--tni-gold);">-</strong></p>
+            <h3>DAFTAR TAGIHAN IURAN KOMPI ANDA</h3>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Keterangan Iuran</th><th>Nominal</th><th>Status</th><th>Tindakan</th></tr>
+                </thead>
+                <tbody id="member-pay-table"></tbody>
+            </table>
+        </div>
+
+        <!-- 3. SETTING AKUN PRAJURIT -->
+        <div id="sec-settings" class="section-box">
+            <h2>SETTING AKUN PRAJURIT</h2>
+            <form id="form-settings">
+                <label>NAMA LENGKAP:</label>
+                <input type="text" id="set-fullname" required>
+                <label>PANGKAT:</label>
+                <select id="set-pangkat">
+                    <option value="Prada">Prada</option>
+                    <option value="Pratu">Pratu</option>
+                    <option value="Praka">Praka</option>
+                    <option value="Kopda">Kopda</option>
+                    <option value="Koptu">Koptu</option>
+                    <option value="Serda">Serda</option>
+                    <option value="Sertu">Sertu</option>
+                    <option value="Kapten Inf">Kapten Inf</option>
+                </select>
+                <label>NRP:</label>
+                <input type="text" id="set-nrp" required>
+                <label>GANTI SANDI (KOSONGKAN JIKA TIDAK DIUBAH):</label>
+                <input type="password" id="set-password" placeholder="Sandi Baru">
+                <button type="submit" class="btn-tactical">PERBARUI PROFIL</button>
+            </form>
+        </div>
+
+        <!-- 4. PANEL KOMANDO ADMIN -->
+        <div id="sec-admin" class="section-box">
+            <!-- KOP SURAT CETAK (HANYA MUNCUL SAAT PRINT KERTAS / PDF) -->
+            <div class="print-only-header">
+                <h3>KOMANDO DAERAH MILITER // BATALJON INFANTERI</h3>
+                <h2>KOMPI SENAPAN A (KIPAN A)</h2>
+                <p>REKAPITULASI ADMINISTRASI KAS & STATUS IURAN PERSONEL</p>
+                <div class="print-line"></div>
+            </div>
+
+            <h2>[ KOMANDO ] REKAPITULASI KEUANGAN & PERSONEL</h2>
+
+            <!-- TOMBOL EKSPOR ASLI EXCEL & PRINT DOKUMEN -->
+            <div class="export-btn-group">
+                <button type="button" class="btn-tactical btn-excel" onclick="exportToExcel()">
+                    📊 EKSPOR REKAP KE EXCEL (.XLSX)
+                </button>
+                <button type="button" class="btn-tactical btn-print" onclick="printReport()">
+                    🖨️ CETAK DOKUMEN RESMI (A4 / PDF)
+                </button>
+            </div>
+            
+            <div class="hud-grid">
+                <div class="hud-card">
+                    <div class="title">Total Personel Kompi</div>
+                    <div class="val" id="hud-total-members">0 Orang</div>
+                </div>
+                <div class="hud-card green">
+                    <div class="title">Prajurit Tertib (Lunas)</div>
+                    <div class="val" id="hud-total-lunas">0 Tagihan</div>
+                </div>
+                <div class="hud-card red">
+                    <div class="title">Prajurit Menunggak</div>
+                    <div class="val" id="hud-total-menunggak">0 Tagihan</div>
+                </div>
+                <div class="hud-card">
+                    <div class="title">Total Kas Terkumpul</div>
+                    <div class="val" id="hud-total-kas">Rp 0</div>
+                </div>
+            </div>
+
+            <h3 style="color:var(--tni-gold);">PENGATURAN REKENING BANK & QRIS RESMI KOMANDO</h3>
+            <form id="form-config-payment" style="background:#050a07; padding:15px; border:1px solid var(--border-gold);">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                    <div>
+                        <label>NAMA BANK RESMI:</label>
+                        <input type="text" id="cfg-bank-name" placeholder="Contoh: Bank BRI / Mandiri" required>
+                    </div>
+                    <div>
+                        <label>NOMOR REKENING KAS KOMPI:</label>
+                        <input type="text" id="cfg-account-number" placeholder="Contoh: 0123-01-000987-53-1" required>
+                    </div>
+                </div>
+                <label>ATAS NAMA REKENING:</label>
+                <input type="text" id="cfg-account-holder" placeholder="Contoh: KAS KOMPI SENAPAN A" required>
+                
+                <div style="display:grid; grid-template-columns: 1fr 2fr; gap:12px;">
+                    <div>
+                        <label>NMID QRIS KOMANDO:</label>
+                        <input type="text" id="cfg-qris-nmid" placeholder="ID1020304050607" required>
+                    </div>
+                    <div>
+                        <label>PAYLOAD / STRING QRIS KOMANDO:</label>
+                        <input type="text" id="cfg-qris-payload" placeholder="00020101021226580016ID..." required>
+                    </div>
+                </div>
+                <button type="submit" class="btn-tactical" style="background:var(--border-gold); color:#000;">SIMPAN PENGATURAN REKENING & QRIS</button>
+            </form>
+
+            <h3>TERBITKAN INSTRUKSI IURAN KOMPI (MASSAL KE SELURUH ANGGOTA)</h3>
+            <form id="form-admin-create-bill" style="background: #050a07; padding: 15px; border: 1px solid var(--border-camo);">
+                <label>NAMA IURAN / KETERANGAN:</label>
+                <input type="text" id="bill-desc" placeholder="Contoh: Iuran Barak & Perawatan Senjata Bulan Ini" required>
+                <label>NOMINAL PER PRAJURIT (RP):</label>
+                <input type="number" id="bill-amount" placeholder="50000" required>
+                <button type="submit" class="btn-tactical">TERBITKAN KE SEMUA PRAJURIT</button>
+            </form>
+
+            <h3 style="color:var(--danger-red);">DAFTAR PRAJURIT BELUM BAYAR (MENUNGGAK)</h3>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Prajurit</th><th>NRP</th><th>Iuran</th><th>Nominal</th><th>Status</th><th>Tindakan Danki</th></tr>
+                </thead>
+                <tbody id="table-belum-bayar"></tbody>
+            </table>
+
+            <h3 style="color:var(--tni-radar-neon);">DAFTAR PRAJURIT SUDAH BAYAR (TERVERIFIKASI LUNAS)</h3>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Prajurit</th><th>NRP</th><th>Iuran</th><th>Nominal</th><th>Status</th></tr>
+                </thead>
+                <tbody id="table-sudah-bayar"></tbody>
+            </table>
+
+            <h3>DAFTAR SELURUH ANGGOTA KOMPI</h3>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Nama Lengkap</th><th>Pangkat</th><th>NRP</th><th>Role</th><th>Aksi</th></tr>
+                </thead>
+                <tbody id="admin-user-table"></tbody>
+            </table>
+
+            <div id="box-admin-edit-user" style="display:none; background:#050a07; padding:15px; border:1px solid var(--tni-gold); margin-top:20px;">
+                <h3>EDIT DATA PRAJURIT (KONTROL KOMANDAN)</h3>
+                <form id="form-admin-edit-user">
+                    <input type="hidden" id="adm-user-id">
+                    <label>NAMA LENGKAP:</label>
+                    <input type="text" id="adm-user-fullname" required>
+                    <label>PANGKAT:</label>
+                    <select id="adm-user-pangkat">
+                        <option value="Prada">Prada</option>
+                        <option value="Pratu">Pratu</option>
+                        <option value="Praka">Praka</option>
+                        <option value="Kopda">Kopda</option>
+                        <option value="Koptu">Koptu</option>
+                        <option value="Serda">Serda</option>
+                        <option value="Sertu">Sertu</option>
+                        <option value="Kapten Inf">Kapten Inf</option>
+                    </select>
+                    <label>NRP:</label>
+                    <input type="text" id="adm-user-nrp" required>
+                    <label>ROLE / HAK AKSES:</label>
+                    <select id="adm-user-role">
+                        <option value="member">Prajurit (Member)</option>
+                        <option value="admin">Komando (Admin)</option>
+                    </select>
+                    <label>RESET KATA SANDI PRAJURIT:</label>
+                    <input type="password" id="adm-user-password" placeholder="Sandi Baru (Opsional)">
+                    <button type="submit" class="btn-tactical">SIMPAN PERUBAHAN PERSONEL</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL POPUP QRIS & REKENING TAKTIS RESMI -->
+    <div id="modal-qris" class="qris-overlay" style="display:none;">
+        <div class="qris-box">
+            <div class="qris-header">
+                <h3>[ QRIS & REKENING KOMANDO ]</h3>
+                <p>KOMPI SENAPAN A // RADAR PEMBAYARAN AKTIF</p>
+            </div>
+            
+            <div class="qris-body">
+                <p id="qris-bill-info" style="color:var(--tni-gold); font-weight:bold; font-size:15px; margin-bottom: 12px;">-</p>
+                <div class="qris-frame">
+                    <img id="qris-barcode" src="" alt="QRIS KIPAN A" />
+                </div>
+
+                <div class="bank-details-box">
+                    <div>BANK: <span id="modal-bank-name" style="color:#fff;">-</span></div>
+                    <div>NO REK: <span id="modal-bank-acc" style="color:var(--tni-radar-neon); font-weight:bold; font-size:14px;">-</span></div>
+                    <div>A.N: <span id="modal-bank-holder" style="color:#fff;">-</span></div>
+                </div>
+
+                <!-- Radar Pemindai Auto-ACC Realtime -->
+                <div class="radar-status">
+                    <span class="radar-dot"></span>
+                    <span id="radar-text">Memindai Sinyal Pembayaran Bank... (Auto-ACC)</span>
+                </div>
+            </div>
+
+            <div class="qris-footer">
+                <button type="button" class="btn-action btn-danger" onclick="closeQris()">TUTUP MARKAS</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
