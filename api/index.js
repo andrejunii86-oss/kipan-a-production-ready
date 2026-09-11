@@ -6,12 +6,7 @@ const path = require('path');
 
 const app = express();
 
-// Konfigurasi koneksi database yang aman untuk Cloud/Vercel
 const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-    console.error("[CRITICAL ERROR] DATABASE_URL belum terpasang di Environment Variables Vercel!");
-}
 
 const pool = new Pool({
     connectionString: connectionString || 'postgresql://unconfigured:unconfigured@localhost:5432/unconfigured',
@@ -25,11 +20,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'kipan_a_tni_ad_super_secret_key_20
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Pengaturan file statis untuk Vercel Serverless
 app.use(express.static(path.join(process.cwd(), 'public')));
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 1. RUTE DARURAT: Sinkronisasi Tabel & Admin
+// Setup / Inisialisasi Database
 app.get('/api/setup-admin-darurat', async (req, res) => {
     try {
         if (!process.env.DATABASE_URL) {
@@ -50,28 +44,6 @@ app.get('/api/setup-admin-darurat', async (req, res) => {
 
             ALTER TABLE users ADD COLUMN IF NOT EXISTS nrp VARCHAR(30) DEFAULT '-';
             ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'member';
-
-            CREATE TABLE IF NOT EXISTS payments (
-                id SERIAL PRIMARY KEY,
-                user_id INT REFERENCES users(id) ON DELETE CASCADE,
-                keterangan VARCHAR(255) NOT NULL,
-                jumlah NUMERIC(12, 2) NOT NULL,
-                status VARCHAR(20) DEFAULT 'BELUM BAYAR',
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS payment_settings (
-                id INT PRIMARY KEY DEFAULT 1,
-                bank_name VARCHAR(50) DEFAULT 'Bank BRI',
-                account_number VARCHAR(50) DEFAULT '0123-01-000987-53-1',
-                account_holder VARCHAR(100) DEFAULT 'KAS KOMPI SENAPAN A',
-                qris_nmid VARCHAR(50) DEFAULT 'ID1020304050607',
-                qris_payload TEXT DEFAULT '00020101021226580016ID.GO.TNI-AD.KIPANA5204581253033605802ID5914KIPAN A KAS6007JAKARTA'
-            );
-
-            INSERT INTO payment_settings (id, bank_name, account_number, account_holder, qris_nmid, qris_payload)
-            VALUES (1, 'Bank BRI', '0123-01-000987-53-1', 'KAS KOMPI SENAPAN A', 'ID1020304050607', '00020101021226580016ID.GO.TNI-AD.KIPANA')
-            ON CONFLICT (id) DO NOTHING;
         `);
 
         const adminHash = await bcrypt.hash('admin123', 10);
@@ -81,31 +53,16 @@ app.get('/api/setup-admin-darurat', async (req, res) => {
             ['Komandan Kompi A (Danki)', 'Kapten Inf', '11030012345', 'admin', adminHash]
         );
 
-        res.send(`
-            <div style="font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:50px auto;border:2px solid #2ecc71;border-radius:8px;background:#f9fdfa;text-align:center;">
-                <h2 style="color:#27ae60;margin-top:0;">DATABASE & ADMIN SIAP!</h2>
-                <p style="color:#333;">Struktur tabel dan akun Komando telah disinkronkan ke Cloud Neon.</p>
-                <a href="/" style="display:inline-block;padding:10px 20px;background:#27ae60;color:#fff;text-decoration:none;border-radius:4px;font-weight:bold;">Masuk ke Markas</a>
-            </div>
-        `);
+        res.send(`<h2 style="color:green; text-align:center; margin-top:50px;">DATABASE & ADMIN SIAP! <a href="/">Kembali ke Markas</a></h2>`);
     } catch (err) {
         console.error('[SETUP ERROR]', err);
-        res.status(500).send(`
-            <div style="font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:50px auto;border:2px solid #e74c3c;border-radius:8px;background:#fffaf9;">
-                <h2 style="color:#c0392b;margin-top:0;">GAGAL KONEKSI DATABASE</h2>
-                <p style="color:#333;">Detail galat: <b>${err.message}</b></p>
-            </div>
-        `);
+        res.status(500).send(`<h2 style="color:red; text-align:center; margin-top:50px;">GAGAL KONEKSI: ${err.message}</h2>`);
     }
 });
 
-// 2. RUTE API LOGIN
+// Rute API Login
 app.post('/api/login', async (req, res) => {
     try {
-        if (!process.env.DATABASE_URL) {
-            return res.status(500).json({ success: false, message: "DATABASE_URL belum dikonfigurasi di Vercel." });
-        }
-
         const { username, password } = req.body;
         if (!username || !password) {
             return res.status(400).json({ success: false, message: "Username dan password wajib diisi." });
@@ -148,17 +105,13 @@ app.post('/api/login', async (req, res) => {
         });
     } catch (err) {
         console.error('[LOGIN ERROR]', err);
-        res.status(500).json({ success: false, message: "Terjadi kesalahan pada server database: " + err.message });
+        res.status(500).json({ success: false, message: "Terjadi kesalahan server: " + err.message });
     }
 });
 
-// 3. RUTE API REGISTER (PENDAFTARAN MEMBER BARU)
+// Rute API Register
 app.post('/api/register', async (req, res) => {
     try {
-        if (!process.env.DATABASE_URL) {
-            return res.status(500).json({ success: false, message: "DATABASE_URL belum dikonfigurasi di Vercel." });
-        }
-
         const { fullname, pangkat, nrp, username, password } = req.body;
         
         if (!username || !password || !nrp || !fullname) {
@@ -184,11 +137,10 @@ app.post('/api/register', async (req, res) => {
         res.json({ success: true, message: "Pendaftaran personel berhasil! Silakan login." });
     } catch (err) {
         console.error('[REGISTER ERROR]', err);
-        res.status(500).json({ success: false, message: "Terjadi kesalahan pada server database: " + err.message });
+        res.status(500).json({ success: false, message: "Terjadi kesalahan server: " + err.message });
     }
 });
 
-// 4. FALLBACK RUTE UTAMA (MENGARAHKAN KE INDEX.HTML)
 app.get('*', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
 });
