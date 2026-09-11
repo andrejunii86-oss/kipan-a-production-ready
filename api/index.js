@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(process.cwd(), 'public')));
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Setup / Inisialisasi Database
+// Setup / Inisialisasi Database Darurat
 app.get('/api/setup-admin-darurat', async (req, res) => {
     try {
         if (!process.env.DATABASE_URL) {
@@ -145,4 +145,5 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
 });
 
+// PENTING: Wajib mengekspor app untuk Vercel Serverless, TANPA app.listen()
 module.exports = app;
