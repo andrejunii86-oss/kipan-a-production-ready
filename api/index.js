@@ -1,7 +1,29 @@
-// RUTE DARURAT KHUSUS VERCEL: PAKSA SETEL ULANG ADMIN & REPAIR DATABASE
+const express = require('express');
+const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const path = require('path');
+
+const app = express();
+
+// Konfigurasi koneksi database PostgreSQL (Neon)
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'kipan_a_tni_ad_super_secret_key_2026';
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Pengaturan file statis untuk Vercel Serverless
+app.use(express.static(path.join(process.cwd(), 'public')));
+app.use(express.static(path.join(__dirname, '../public')));
+
+// 1. RUTE DARURAT: Sinkronisasi Tabel & Admin
 app.get('/api/setup-admin-darurat', async (req, res) => {
     try {
-        // 1. Pastikan tabel users dan payment_settings sudah ada beserta kolomnya
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -40,7 +62,6 @@ app.get('/api/setup-admin-darurat', async (req, res) => {
             ON CONFLICT (id) DO NOTHING;
         `);
 
-        // 2. Buat ulang akun admin dengan password fresh
         const adminHash = await bcrypt.hash('admin123', 10);
         await pool.query("DELETE FROM users WHERE LOWER(username) = 'admin' OR LOWER(nrp) = '11030012345'");
         await pool.query(
@@ -70,3 +91,60 @@ app.get('/api/setup-admin-darurat', async (req, res) => {
         `);
     }
 });
+
+// 2. RUTE API LOGIN
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        
+        if (!username || !password) {
+            return res.status(400).json({ success: false, message: "Username dan password wajib diisi." });
+        }
+
+        const result = await pool.query(
+            "SELECT * FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(nrp) = LOWER($1)",
+            [username.trim()]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(400).json({ success: false, message: "Pengguna atau NRP tidak ditemukan." });
+        }
+
+        const user = result.rows[0];
+        const match = await bcrypt.compare(password, user.password);
+
+        if (!match) {
+            return res.status(400).json({ success: false, message: "Kata sandi salah." });
+        }
+
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.role },
+            JWT_SECRET,
+            { expiresIn: '1d' }
+        );
+
+        res.json({
+            success: true,
+            message: "Login berhasil",
+            token,
+            user: {
+                id: user.id,
+                fullname: user.fullname,
+                pangkat: user.pangkat,
+                nrp: user.nrp,
+                username: user.username,
+                role: user.role
+            }
+        });
+    } catch (err) {
+        console.error('[LOGIN ERROR]', err);
+        res.status(500).json({ success: false, message: "Terjadi kesalahan pada server database." });
+    }
+});
+
+// 3. FALLBACK RUTE UTAMA (MENGARAHKAN KE INDEX.HTML)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
+});
+
+module.exports = app;
