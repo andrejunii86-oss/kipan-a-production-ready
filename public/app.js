@@ -1,4 +1,4 @@
-// --- FUNGSI NAVIGASI ANTAR SECTION ---
+v// --- FUNGSI NAVIGASI ANTAR SECTION ---
 function navigate(sectionId) {
     const sections = document.querySelectorAll('.section-box');
     sections.forEach(sec => sec.classList.remove('active'));
@@ -153,7 +153,6 @@ function showAlert(message, type) {
 
 // --- FUNGSI PENDUKUNG DATA ---
 async function loadMemberDashboard() {
-    const token = localStorage.getItem('token');
     const userJson = localStorage.getItem('user');
     if (userJson) {
         const user = JSON.parse(userJson);
