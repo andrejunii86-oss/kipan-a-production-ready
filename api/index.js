@@ -6,9 +6,15 @@ const path = require('path');
 
 const app = express();
 
-// Konfigurasi koneksi database PostgreSQL (Neon) yang disesuaikan untuk Serverless
+// Konfigurasi koneksi database yang aman untuk Cloud/Vercel (Mencegah lari ke localhost)
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+    console.error("[CRITICAL ERROR] DATABASE_URL belum terpasang di Environment Variables Vercel!");
+}
+
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: connectionString || 'postgresql://unconfigured:unconfigured@localhost:5432/unconfigured',
     ssl: {
         rejectUnauthorized: false
     }
@@ -26,6 +32,10 @@ app.use(express.static(path.join(__dirname, '../public')));
 // 1. RUTE DARURAT: Sinkronisasi Tabel & Admin
 app.get('/api/setup-admin-darurat', async (req, res) => {
     try {
+        if (!process.env.DATABASE_URL) {
+            throw new Error("DATABASE_URL kosong di Vercel Environment Variables!");
+        }
+
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -88,7 +98,7 @@ app.get('/api/setup-admin-darurat', async (req, res) => {
             <div style="font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:50px auto;border:2px solid #e74c3c;border-radius:8px;background:#fffaf9;">
                 <h2 style="color:#c0392b;margin-top:0;">GAGAL KONEKSI DATABASE</h2>
                 <p style="color:#333;">Detail galat: <b>${err.message}</b></p>
-                <p style="font-size:12px;color:#777;">Periksa apakah DATABASE_URL di Environment Variables Vercel sudah terpasang dengan benar.</p>
+                <p style="font-size:12px;color:#777;">Pastikan DATABASE_URL sudah terpasang di Environment Variables Vercel (Production, Preview, Development).</p>
             </div>
         `);
     }
@@ -97,6 +107,10 @@ app.get('/api/setup-admin-darurat', async (req, res) => {
 // 2. RUTE API LOGIN
 app.post('/api/login', async (req, res) => {
     try {
+        if (!process.env.DATABASE_URL) {
+            return res.status(500).json({ success: false, message: "DATABASE_URL belum dikonfigurasi di Vercel." });
+        }
+
         const { username, password } = req.body;
         
         if (!username || !password) {
