@@ -1,4 +1,4 @@
-v// --- FUNGSI NAVIGASI ANTAR SECTION ---
+// --- FUNGSI NAVIGASI ANTAR SECTION ---
 function navigate(sectionId) {
     const sections = document.querySelectorAll('.section-box');
     sections.forEach(sec => sec.classList.remove('active'));
