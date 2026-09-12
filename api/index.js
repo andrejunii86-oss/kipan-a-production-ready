@@ -201,7 +201,7 @@ async function ensureDatabase() {
             id SERIAL PRIMARY KEY,
             bill_id INTEGER,
             user_id INTEGER,
-            amount  NUMERIC(14,2) DEFAULT 0,
+            amount NUMERIC(14,2) DEFAULT 0,
             keterangan TEXT DEFAULT '',
             status VARCHAR(30) NOT NULL DEFAULT 'pending',
             payment_method VARCHAR(50) DEFAULT 'bank_transfer',
@@ -216,10 +216,11 @@ async function ensureDatabase() {
         ALTER TABLE payments
         ADD COLUMN IF NOT EXISTS bill_id INTEGER;
     `);
+
     await pool.query(`
-    ALTER TABLE payments
-    ADD COLUMN IF NOT EXISTS keterangan TEXT DEFAULT '';
-`);
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS keterangan TEXT DEFAULT '';
+    `);
 
     await pool.query(`
         ALTER TABLE payments
@@ -606,12 +607,14 @@ app.post("/api/register", async (req, res) => {
                 bill_id,
                 user_id,
                 amount,
+                keterangan,
                 status
             )
             SELECT
                 b.id,
                 $1,
                 b.amount,
+                b.description,
                 'pending'
             FROM bills b
             WHERE NOT EXISTS (
@@ -708,12 +711,14 @@ app.get(
                     bill_id,
                     user_id,
                     amount,
+                    keterangan,
                     status
                 )
                 SELECT
                     b.id,
                     u.id,
                     b.amount,
+                    b.description,
                     'pending'
                 FROM bills b
                 CROSS JOIN users u
@@ -844,16 +849,18 @@ app.post(
                         bill_id,
                         user_id,
                         amount,
+                        keterangan,
                         status,
                         payment_method,
                         paid_at
                     )
-                    VALUES ($1,$2,$3,'pending','bank_transfer',CURRENT_TIMESTAMP)
+                    VALUES ($1,$2,$3,$4,'pending','bank_transfer',CURRENT_TIMESTAMP)
                     `,
                     [
                         billId,
                         req.user.id,
                         bill.rows[0].amount,
+                        bill.rows[0].description,
                     ]
                 );
             } else {
@@ -921,12 +928,14 @@ app.get(
                     bill_id,
                     user_id,
                     amount,
+                    keterangan,
                     status
                 )
                 SELECT
                     b.id,
                     u.id,
                     b.amount,
+                    b.description,
                     'pending'
                 FROM bills b
                 CROSS JOIN users u
@@ -1182,27 +1191,27 @@ app.post(
             await client.query(
                 `
                 INSERT INTO payments
-(
-    bill_id,
-    user_id,
-    amount,
-    keterangan,
-    status
-)
-SELECT
-    $1,
-    id,
-    $2,
-    $3,
-    'pending'
-FROM users
-WHERE role = 'member'
+                (
+                    bill_id,
+                    user_id,
+                    amount,
+                    keterangan,
+                    status
+                )
+                SELECT
+                    $1,
+                    id,
+                    $2,
+                    $3,
+                    'pending'
+                FROM users
+                WHERE role = 'member'
                 `,
                 [
-    bill.id,
-    amount,
-    description,
-]
+                    bill.id,
+                    amount,
+                    description,
+                ]
             );
 
             await client.query("COMMIT");
