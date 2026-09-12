@@ -6,126 +6,49 @@ const path = require("path");
 
 const app = express();
 
-app.use(express.json({ limit: "5mb" }));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-/* =========================================================
-   DATABASE
-========================================================= */
+const connectionString = process.env.DATABASE_URL;
 
-const DATABASE_URL = process.env.DATABASE_URL;
+if (!connectionString) {
+    console.warn("[WARNING] DATABASE_URL belum diatur.");
+}
 
 const pool = new Pool({
     connectionString:
-        DATABASE_URL ||
+        connectionString ||
         "postgresql://unconfigured:unconfigured@localhost:5432/unconfigured",
     ssl: {
         rejectUnauthorized: false,
     },
-    max: 5,
 });
 
-/* =========================================================
-   JWT
-========================================================= */
-
 const JWT_SECRET =
-    process.env.JWT_SECRET ||
-    "kipan_a_tni_ad_super_secret_key_2026";
+    process.env.JWT_SECRET || "kipan_a_tni_ad_super_secret_key_2026";
 
 /* =========================================================
    STATIC FILE
 ========================================================= */
 
 app.use(express.static(path.join(process.cwd(), "public")));
-app.use(express.static(path.join(__dirname, "../public")));
 
-/* =========================================================
-   DATABASE INITIALIZATION
-========================================================= */
-
-let databaseReady = false;
-
-async function initDatabase() {
-    if (databaseReady) return;
-
-    if (!DATABASE_URL) {
-        throw new Error("DATABASE_URL belum diatur di Vercel.");
-    }
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            fullname VARCHAR(100) NOT NULL,
-            pangkat VARCHAR(50) NOT NULL DEFAULT 'Prada',
-            nrp VARCHAR(30) UNIQUE NOT NULL,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL,
-            role VARCHAR(20) NOT NULL DEFAULT 'member',
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
-    `);
-
-    await pool.query(`
-        ALTER TABLE users
-        ADD COLUMN IF NOT EXISTS nrp VARCHAR(30);
-    `);
-
-    await pool.query(`
-        ALTER TABLE users
-        ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'member';
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS bills (
-            id SERIAL PRIMARY KEY,
-            description TEXT NOT NULL,
-            amount NUMERIC(14,2) NOT NULL DEFAULT 0,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS payments (
-            id SERIAL PRIMARY KEY,
-            bill_id INTEGER NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            amount NUMERIC(14,2) NOT NULL DEFAULT 0,
-            status VARCHAR(30) NOT NULL DEFAULT 'pending',
-            note TEXT DEFAULT '',
-            paid_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            verified_at TIMESTAMP WITH TIME ZONE
-        );
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS payment_config (
-            id INTEGER PRIMARY KEY,
-            bank_name VARCHAR(100) DEFAULT '',
-            account_number VARCHAR(100) DEFAULT '',
-            account_holder VARCHAR(150) DEFAULT '',
-            qris_nmid VARCHAR(150) DEFAULT '',
-            qris_payload TEXT DEFAULT '',
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
-    `);
-
-    await pool.query(`
-        INSERT INTO payment_config
-            (id, bank_name, account_number, account_holder, qris_nmid, qris_payload)
-        VALUES
-            (1, '', '', '', '', '')
-        ON CONFLICT (id) DO NOTHING;
-    `);
-
-    databaseReady = true;
+if (__dirname) {
+    app.use(express.static(path.join(__dirname, "../public")));
 }
 
 /* =========================================================
-   AUTH HELPER
+   HELPER
 ========================================================= */
 
-function getToken(req) {
+function sendError(res, status, message) {
+    return res.status(status).json({
+        success: false,
+        message,
+    });
+}
+
+function getTokenFromRequest(req) {
     const auth = req.headers.authorization || "";
 
     if (auth.startsWith("Bearer ")) {
@@ -135,15 +58,12 @@ function getToken(req) {
     return null;
 }
 
-function authenticate(req, res, next) {
+function authRequired(req, res, next) {
     try {
-        const token = getToken(req);
+        const token = getTokenFromRequest(req);
 
         if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: "Sesi login tidak ditemukan.",
-            });
+            return sendError(res, 401, "Sesi login tidak ditemukan.");
         }
 
         const decoded = jwt.verify(token, JWT_SECRET);
@@ -152,22 +72,259 @@ function authenticate(req, res, next) {
 
         next();
     } catch (err) {
-        return res.status(401).json({
-            success: false,
-            message: "Sesi login sudah tidak valid. Silakan login kembali.",
-        });
+        console.error("[AUTH ERROR]", err.message);
+
+        return sendError(
+            res,
+            401,
+            "Sesi login tidak valid atau sudah kedaluwarsa."
+        );
     }
 }
 
-function adminOnly(req, res, next) {
+function adminRequired(req, res, next) {
     if (!req.user || req.user.role !== "admin") {
-        return res.status(403).json({
-            success: false,
-            message: "Akses hanya untuk admin.",
-        });
+        return sendError(res, 403, "Akses khusus Komando/Admin.");
     }
 
     next();
+}
+
+function rupiah(value) {
+    return new Intl.NumberFormat("id-ID").format(Number(value || 0));
+}
+
+/* =========================================================
+   DATABASE INITIALIZATION / MIGRATION
+========================================================= */
+
+async function ensureDatabase() {
+    if (!process.env.DATABASE_URL) {
+        throw new Error("DATABASE_URL belum tersedia.");
+    }
+
+    /*
+     * USERS
+     */
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            fullname VARCHAR(100) NOT NULL,
+            pangkat VARCHAR(50) NOT NULL DEFAULT 'Prada',
+            nrp VARCHAR(30) DEFAULT '-',
+            username VARCHAR(50) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
+            role VARCHAR(20) NOT NULL DEFAULT 'member',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+
+    await pool.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS fullname VARCHAR(100);
+    `);
+
+    await pool.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS pangkat VARCHAR(50) DEFAULT 'Prada';
+    `);
+
+    await pool.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS nrp VARCHAR(30) DEFAULT '-';
+    `);
+
+    await pool.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS username VARCHAR(50);
+    `);
+
+    await pool.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS password VARCHAR(255);
+    `);
+
+    await pool.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'member';
+    `);
+
+    await pool.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS created_at
+        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+    `);
+
+    /*
+     * BILLS
+     */
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS bills (
+            id SERIAL PRIMARY KEY,
+            description TEXT NOT NULL,
+            amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+            created_by INTEGER,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+
+    await pool.query(`
+        ALTER TABLE bills
+        ADD COLUMN IF NOT EXISTS description TEXT;
+    `);
+
+    await pool.query(`
+        ALTER TABLE bills
+        ADD COLUMN IF NOT EXISTS amount NUMERIC(14,2) DEFAULT 0;
+    `);
+
+    await pool.query(`
+        ALTER TABLE bills
+        ADD COLUMN IF NOT EXISTS created_by INTEGER;
+    `);
+
+    await pool.query(`
+        ALTER TABLE bills
+        ADD COLUMN IF NOT EXISTS created_at
+        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+    `);
+
+    /*
+     * PAYMENTS
+     *
+     * Ini bagian penting untuk memperbaiki:
+     *
+     * column p.bill_id does not exist
+     */
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS payments (
+            id SERIAL PRIMARY KEY,
+            bill_id INTEGER,
+            user_id INTEGER,
+            amount NUMERIC(14,2) DEFAULT 0,
+            status VARCHAR(30) NOT NULL DEFAULT 'pending',
+            payment_method VARCHAR(50) DEFAULT 'bank_transfer',
+            paid_at TIMESTAMP WITH TIME ZONE,
+            verified_at TIMESTAMP WITH TIME ZONE,
+            verified_by INTEGER,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS bill_id INTEGER;
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS user_id INTEGER;
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS amount NUMERIC(14,2) DEFAULT 0;
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS status VARCHAR(30) DEFAULT 'pending';
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50)
+        DEFAULT 'bank_transfer';
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS paid_at
+        TIMESTAMP WITH TIME ZONE;
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS verified_at
+        TIMESTAMP WITH TIME ZONE;
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS verified_by INTEGER;
+    `);
+
+    await pool.query(`
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS created_at
+        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+    `);
+
+    /*
+     * PAYMENT CONFIG
+     */
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS payment_config (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            bank_name VARCHAR(100) DEFAULT '',
+            account_number VARCHAR(100) DEFAULT '',
+            account_holder VARCHAR(150) DEFAULT '',
+            qris_nmid VARCHAR(100) DEFAULT '',
+            qris_payload TEXT DEFAULT '',
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+
+    /*
+     * INDEX
+     */
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_users_username
+        ON users(username);
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_users_nrp
+        ON users(nrp);
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_payments_bill_id
+        ON payments(bill_id);
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_payments_user_id
+        ON payments(user_id);
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_payments_status
+        ON payments(status);
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_bills_created_at
+        ON bills(created_at);
+    `);
+
+    /*
+     * DEFAULT PAYMENT CONFIG
+     */
+    await pool.query(`
+        INSERT INTO payment_config (
+            id,
+            bank_name,
+            account_number,
+            account_holder,
+            qris_nmid,
+            qris_payload
+        )
+        VALUES (1, '', '', '', '', '')
+        ON CONFLICT (id) DO NOTHING;
+    `);
+
+    console.log("[DATABASE] Database siap.");
 }
 
 /* =========================================================
@@ -176,7 +333,6 @@ function adminOnly(req, res, next) {
 
 app.get("/api/health", async (req, res) => {
     try {
-        await initDatabase();
         await pool.query("SELECT 1");
 
         res.json({
@@ -196,178 +352,92 @@ app.get("/api/health", async (req, res) => {
 });
 
 /* =========================================================
-   SETUP ADMIN DARURAT
+   DATABASE SETUP
 ========================================================= */
 
 app.get("/api/setup-admin-darurat", async (req, res) => {
     try {
-        await initDatabase();
+        await ensureDatabase();
 
-        const passwordHash = await bcrypt.hash("admin123", 10);
+        const adminHash = await bcrypt.hash("admin123", 10);
 
-        await pool.query(
-            `
-            DELETE FROM users
+        const existingAdmin = await pool.query(`
+            SELECT id
+            FROM users
             WHERE LOWER(username) = 'admin'
-            `
-        );
+            LIMIT 1
+        `);
 
-        await pool.query(
-            `
-            INSERT INTO users
-            (
-                fullname,
-                pangkat,
-                nrp,
-                username,
-                password,
-                role
-            )
-            VALUES
-            ($1, $2, $3, $4, $5, 'admin')
-            `,
-            [
-                "Komandan Kompi A (Danki)",
-                "Kapten Inf",
-                "11030012345",
-                "admin",
-                passwordHash,
-            ]
-        );
+        if (existingAdmin.rows.length === 0) {
+            await pool.query(
+                `
+                INSERT INTO users
+                (
+                    fullname,
+                    pangkat,
+                    nrp,
+                    username,
+                    password,
+                    role
+                )
+                VALUES ($1,$2,$3,$4,$5,'admin')
+                `,
+                [
+                    "Komandan Kompi A (Danki)",
+                    "Kapten Inf",
+                    "11030012345",
+                    "admin",
+                    adminHash,
+                ]
+            );
+        } else {
+            await pool.query(
+                `
+                UPDATE users
+                SET
+                    fullname = $1,
+                    pangkat = $2,
+                    nrp = $3,
+                    password = $4,
+                    role = 'admin'
+                WHERE LOWER(username) = 'admin'
+                `,
+                [
+                    "Komandan Kompi A (Danki)",
+                    "Kapten Inf",
+                    "11030012345",
+                    adminHash,
+                ]
+            );
+        }
 
         res.send(`
             <div style="
                 font-family:Arial;
                 text-align:center;
-                margin-top:50px;
+                margin-top:60px;
+                background:#07120d;
+                color:#fff;
+                min-height:300px;
+                padding:40px;
             ">
-                <h2 style="color:green;">
-                    ADMIN BERHASIL DIBUAT
-                </h2>
-
+                <h1 style="color:#b5c86a;">DATABASE SIAP</h1>
+                <p>Admin berhasil disiapkan.</p>
                 <p>Username: <b>admin</b></p>
                 <p>Password: <b>admin123</b></p>
-
-                <a href="/">
-                    Kembali ke Markas
-                </a>
+                <br>
+                <a href="/" style="color:#b5c86a;">KEMBALI KE MARKAS</a>
             </div>
         `);
     } catch (err) {
-        console.error("[SETUP ADMIN ERROR]", err);
+        console.error("[SETUP ERROR]", err);
 
         res.status(500).send(`
-            <h2 style="color:red;text-align:center;">
-                GAGAL
+            <h2 style="color:red;text-align:center;margin-top:50px;">
+                GAGAL SETUP DATABASE
             </h2>
-
-            <p style="text-align:center;">
-                ${err.message}
-            </p>
+            <p style="text-align:center;">${err.message}</p>
         `);
-    }
-});
-
-/* =========================================================
-   REGISTER
-========================================================= */
-
-app.post("/api/register", async (req, res) => {
-    try {
-        await initDatabase();
-
-        const {
-            fullname,
-            pangkat,
-            nrp,
-            username,
-            password,
-        } = req.body;
-
-        if (!fullname || !nrp || !username || !password) {
-            return res.status(400).json({
-                success: false,
-                message: "Semua kolom wajib diisi.",
-            });
-        }
-
-        const cleanFullname = String(fullname).trim();
-        const cleanPangkat = String(pangkat || "Prada").trim();
-        const cleanNrp = String(nrp).trim();
-        const cleanUsername = String(username).trim();
-
-        if (password.length < 4) {
-            return res.status(400).json({
-                success: false,
-                message: "Kata sandi minimal 4 karakter.",
-            });
-        }
-
-        const existing = await pool.query(
-            `
-            SELECT id
-            FROM users
-            WHERE LOWER(username) = LOWER($1)
-               OR LOWER(nrp) = LOWER($2)
-            LIMIT 1
-            `,
-            [cleanUsername, cleanNrp]
-        );
-
-        if (existing.rows.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Username atau NRP sudah terdaftar.",
-            });
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const result = await pool.query(
-            `
-            INSERT INTO users
-            (
-                fullname,
-                pangkat,
-                nrp,
-                username,
-                password,
-                role
-            )
-            VALUES
-            ($1, $2, $3, $4, $5, 'member')
-            RETURNING
-                id,
-                fullname,
-                pangkat,
-                nrp,
-                username,
-                role,
-                created_at
-            `,
-            [
-                cleanFullname,
-                cleanPangkat,
-                cleanNrp,
-                cleanUsername,
-                hashedPassword,
-            ]
-        );
-
-        const newUser = result.rows[0];
-
-        res.json({
-            success: true,
-            message: "Pendaftaran personel berhasil! Silakan login.",
-            user: newUser,
-        });
-    } catch (err) {
-        console.error("[REGISTER ERROR]", err);
-
-        res.status(500).json({
-            success: false,
-            message: "Gagal mendaftarkan personel: " + err.message,
-        });
     }
 });
 
@@ -377,18 +447,17 @@ app.post("/api/register", async (req, res) => {
 
 app.post("/api/login", async (req, res) => {
     try {
-        await initDatabase();
+        await ensureDatabase();
 
-        const {
-            username,
-            password,
-        } = req.body;
+        const username = String(req.body.username || "").trim();
+        const password = String(req.body.password || "");
 
         if (!username || !password) {
-            return res.status(400).json({
-                success: false,
-                message: "Username/NRP dan password wajib diisi.",
-            });
+            return sendError(
+                res,
+                400,
+                "Username/NRP dan kata sandi wajib diisi."
+            );
         }
 
         const result = await pool.query(
@@ -399,28 +468,23 @@ app.post("/api/login", async (req, res) => {
                OR LOWER(nrp) = LOWER($1)
             LIMIT 1
             `,
-            [String(username).trim()]
+            [username]
         );
 
         if (result.rows.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Pengguna atau NRP tidak ditemukan.",
-            });
+            return sendError(
+                res,
+                400,
+                "Pengguna atau NRP tidak ditemukan."
+            );
         }
 
         const user = result.rows[0];
 
-        const passwordMatch = await bcrypt.compare(
-            password,
-            user.password
-        );
+        const match = await bcrypt.compare(password, user.password);
 
-        if (!passwordMatch) {
-            return res.status(400).json({
-                success: false,
-                message: "Kata sandi salah.",
-            });
+        if (!match) {
+            return sendError(res, 400, "Kata sandi salah.");
         }
 
         const token = jwt.sign(
@@ -431,7 +495,7 @@ app.post("/api/login", async (req, res) => {
             },
             JWT_SECRET,
             {
-                expiresIn: "7d",
+                expiresIn: "1d",
             }
         );
 
@@ -459,17 +523,127 @@ app.post("/api/login", async (req, res) => {
 });
 
 /* =========================================================
-   MEMBER DATA
+   REGISTER
+========================================================= */
+
+app.post("/api/register", async (req, res) => {
+    try {
+        await ensureDatabase();
+
+        const fullname = String(req.body.fullname || "").trim();
+        const pangkat = String(req.body.pangkat || "Prada").trim();
+        const nrp = String(req.body.nrp || "").trim();
+        const username = String(req.body.username || "").trim();
+        const password = String(req.body.password || "");
+
+        if (!fullname || !nrp || !username || !password) {
+            return sendError(
+                res,
+                400,
+                "Semua kolom wajib diisi."
+            );
+        }
+
+        const existing = await pool.query(
+            `
+            SELECT id
+            FROM users
+            WHERE LOWER(username) = LOWER($1)
+               OR LOWER(nrp) = LOWER($2)
+            LIMIT 1
+            `,
+            [username, nrp]
+        );
+
+        if (existing.rows.length > 0) {
+            return sendError(
+                res,
+                400,
+                "Username atau NRP sudah terdaftar."
+            );
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const inserted = await pool.query(
+            `
+            INSERT INTO users
+            (
+                fullname,
+                pangkat,
+                nrp,
+                username,
+                password,
+                role
+            )
+            VALUES ($1,$2,$3,$4,$5,'member')
+            RETURNING id
+            `,
+            [
+                fullname,
+                pangkat,
+                nrp,
+                username,
+                hashedPassword,
+            ]
+        );
+
+        /*
+         * Jika sudah ada tagihan yang diterbitkan sebelumnya,
+         * otomatis buat record pembayaran untuk member baru.
+         */
+        const newUserId = inserted.rows[0].id;
+
+        await pool.query(
+            `
+            INSERT INTO payments
+            (
+                bill_id,
+                user_id,
+                amount,
+                status
+            )
+            SELECT
+                b.id,
+                $1,
+                b.amount,
+                'pending'
+            FROM bills b
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM payments p
+                WHERE p.bill_id = b.id
+                  AND p.user_id = $1
+            )
+            `,
+            [newUserId]
+        );
+
+        res.json({
+            success: true,
+            message:
+                "Pendaftaran personel berhasil! Silakan login.",
+        });
+    } catch (err) {
+        console.error("[REGISTER ERROR]", err);
+
+        res.status(500).json({
+            success: false,
+            message: "Terjadi kesalahan server: " + err.message,
+        });
+    }
+});
+
+/* =========================================================
+   GET CURRENT USER
 ========================================================= */
 
 app.get(
-    "/api/member/data",
-    authenticate,
+    "/api/me",
+    authRequired,
     async (req, res) => {
         try {
-            await initDatabase();
-
-            const userResult = await pool.query(
+            const result = await pool.query(
                 `
                 SELECT
                     id,
@@ -485,14 +659,85 @@ app.get(
                 [req.user.id]
             );
 
-            if (userResult.rows.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Data prajurit tidak ditemukan.",
-                });
+            if (result.rows.length === 0) {
+                return sendError(
+                    res,
+                    404,
+                    "Data personel tidak ditemukan."
+                );
             }
 
-            const billsResult = await pool.query(
+            res.json({
+                success: true,
+                user: result.rows[0],
+            });
+        } catch (err) {
+            console.error("[ME ERROR]", err);
+
+            res.status(500).json({
+                success: false,
+                message: err.message,
+            });
+        }
+    }
+);
+
+/* =========================================================
+   MEMBER DASHBOARD
+========================================================= */
+
+app.get(
+    "/api/member/data",
+    authRequired,
+    async (req, res) => {
+        try {
+            /*
+             * Sinkronisasi tagihan:
+             * setiap bill harus memiliki record payment
+             * untuk setiap member.
+             */
+            await pool.query(
+                `
+                INSERT INTO payments
+                (
+                    bill_id,
+                    user_id,
+                    amount,
+                    status
+                )
+                SELECT
+                    b.id,
+                    u.id,
+                    b.amount,
+                    'pending'
+                FROM bills b
+                CROSS JOIN users u
+                WHERE u.role = 'member'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM payments p
+                      WHERE p.bill_id = b.id
+                        AND p.user_id = u.id
+                  )
+                `
+            );
+
+            const userResult = await pool.query(
+                `
+                SELECT
+                    id,
+                    fullname,
+                    pangkat,
+                    nrp,
+                    username,
+                    role
+                FROM users
+                WHERE id = $1
+                `,
+                [req.user.id]
+            );
+
+            const bills = await pool.query(
                 `
                 SELECT
                     p.id AS payment_id,
@@ -500,44 +745,153 @@ app.get(
                     b.description,
                     b.amount,
                     p.status,
-                    p.note,
+                    p.payment_method,
                     p.paid_at,
-                    p.verified_at
+                    p.verified_at,
+                    b.created_at
                 FROM payments p
                 INNER JOIN bills b
                     ON b.id = p.bill_id
                 WHERE p.user_id = $1
-                ORDER BY b.created_at DESC, p.id DESC
+                ORDER BY b.created_at DESC, b.id DESC
                 `,
                 [req.user.id]
             );
 
-            const configResult = await pool.query(`
-                SELECT
-                    bank_name,
-                    account_number,
-                    account_holder,
-                    qris_nmid,
-                    qris_payload
+            const config = await pool.query(`
+                SELECT *
                 FROM payment_config
                 WHERE id = 1
+                LIMIT 1
             `);
 
             res.json({
                 success: true,
-                user: userResult.rows[0],
-                bills: billsResult.rows,
-                payment_config:
-                    configResult.rows[0] || {},
+                user: userResult.rows[0] || null,
+                bills: bills.rows,
+                paymentConfig: config.rows[0] || null,
             });
         } catch (err) {
             console.error("[MEMBER DATA ERROR]", err);
 
             res.status(500).json({
                 success: false,
+                message: err.message,
+            });
+        }
+    }
+);
+
+/* =========================================================
+   MEMBER PAY BILL
+========================================================= */
+
+app.post(
+    "/api/member/pay",
+    authRequired,
+    async (req, res) => {
+        try {
+            const billId = Number(req.body.bill_id);
+
+            if (!billId) {
+                return sendError(
+                    res,
+                    400,
+                    "ID tagihan tidak valid."
+                );
+            }
+
+            const bill = await pool.query(
+                `
+                SELECT id, amount, description
+                FROM bills
+                WHERE id = $1
+                LIMIT 1
+                `,
+                [billId]
+            );
+
+            if (bill.rows.length === 0) {
+                return sendError(
+                    res,
+                    404,
+                    "Tagihan tidak ditemukan."
+                );
+            }
+
+            const existing = await pool.query(
+                `
+                SELECT *
+                FROM payments
+                WHERE bill_id = $1
+                  AND user_id = $2
+                ORDER BY id DESC
+                LIMIT 1
+                `,
+                [billId, req.user.id]
+            );
+
+            if (existing.rows.length === 0) {
+                await pool.query(
+                    `
+                    INSERT INTO payments
+                    (
+                        bill_id,
+                        user_id,
+                        amount,
+                        status,
+                        payment_method,
+                        paid_at
+                    )
+                    VALUES ($1,$2,$3,'pending','bank_transfer',CURRENT_TIMESTAMP)
+                    `,
+                    [
+                        billId,
+                        req.user.id,
+                        bill.rows[0].amount,
+                    ]
+                );
+            } else {
+                const payment = existing.rows[0];
+
+                if (payment.status === "paid") {
+                    return sendError(
+                        res,
+                        400,
+                        "Tagihan ini sudah lunas."
+                    );
+                }
+
+                await pool.query(
+                    `
+                    UPDATE payments
+                    SET
+                        amount = $1,
+                        status = 'pending',
+                        payment_method = 'bank_transfer',
+                        paid_at = CURRENT_TIMESTAMP,
+                        verified_at = NULL,
+                        verified_by = NULL
+                    WHERE id = $2
+                    `,
+                    [
+                        bill.rows[0].amount,
+                        payment.id,
+                    ]
+                );
+            }
+
+            res.json({
+                success: true,
                 message:
-                    "Gagal mengambil data prajurit: " +
-                    err.message,
+                    "Pembayaran dicatat dan menunggu verifikasi Komando.",
+            });
+        } catch (err) {
+            console.error("[MEMBER PAY ERROR]", err);
+
+            res.status(500).json({
+                success: false,
+                message: err.message,
             });
         }
     }
@@ -549,13 +903,38 @@ app.get(
 
 app.get(
     "/api/admin/data",
-    authenticate,
-    adminOnly,
+    authRequired,
+    adminRequired,
     async (req, res) => {
         try {
-            await initDatabase();
+            /*
+             * Sinkronisasi semua tagihan ke semua member.
+             */
+            await pool.query(`
+                INSERT INTO payments
+                (
+                    bill_id,
+                    user_id,
+                    amount,
+                    status
+                )
+                SELECT
+                    b.id,
+                    u.id,
+                    b.amount,
+                    'pending'
+                FROM bills b
+                CROSS JOIN users u
+                WHERE u.role = 'member'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM payments p
+                      WHERE p.bill_id = b.id
+                        AND p.user_id = u.id
+                  )
+            `);
 
-            const usersResult = await pool.query(`
+            const users = await pool.query(`
                 SELECT
                     id,
                     fullname,
@@ -565,130 +944,162 @@ app.get(
                     role,
                     created_at
                 FROM users
-                ORDER BY created_at DESC
+                ORDER BY
+                    CASE WHEN role = 'admin' THEN 0 ELSE 1 END,
+                    id ASC
             `);
 
-            const paymentsResult = await pool.query(`
+            const bills = await pool.query(`
+                SELECT
+                    b.id,
+                    b.description,
+                    b.amount,
+                    b.created_at,
+                    COUNT(
+                        CASE
+                            WHEN p.status = 'paid'
+                            THEN 1
+                        END
+                    ) AS paid_count,
+                    COUNT(
+                        CASE
+                            WHEN p.status <> 'paid'
+                            THEN 1
+                        END
+                    ) AS unpaid_count
+                FROM bills b
+                LEFT JOIN payments p
+                    ON p.bill_id = b.id
+                GROUP BY
+                    b.id,
+                    b.description,
+                    b.amount,
+                    b.created_at
+                ORDER BY
+                    b.created_at DESC,
+                    b.id DESC
+            `);
+
+            /*
+             * Semua pembayaran yang belum lunas.
+             */
+            const unpaid = await pool.query(`
                 SELECT
                     p.id AS payment_id,
-                    p.amount,
-                    p.status,
-                    p.note,
-                    p.paid_at,
-                    p.verified_at,
-
                     b.id AS bill_id,
-                    b.description,
-                    b.amount AS bill_amount,
-
                     u.id AS user_id,
                     u.fullname,
                     u.pangkat,
                     u.nrp,
-                    u.username
-
+                    b.description,
+                    b.amount,
+                    p.status,
+                    p.paid_at,
+                    p.created_at
                 FROM payments p
-
-                INNER JOIN bills b
-                    ON b.id = p.bill_id
-
                 INNER JOIN users u
                     ON u.id = p.user_id
-
-                ORDER BY p.id DESC
+                INNER JOIN bills b
+                    ON b.id = p.bill_id
+                WHERE p.status <> 'paid'
+                ORDER BY
+                    b.created_at DESC,
+                    u.fullname ASC
             `);
 
-            const billsResult = await pool.query(`
+            /*
+             * Semua pembayaran lunas.
+             */
+            const paid = await pool.query(`
                 SELECT
-                    id,
-                    description,
-                    amount,
-                    created_at
-                FROM bills
-                ORDER BY created_at DESC
+                    p.id AS payment_id,
+                    b.id AS bill_id,
+                    u.id AS user_id,
+                    u.fullname,
+                    u.pangkat,
+                    u.nrp,
+                    b.description,
+                    b.amount,
+                    p.status,
+                    p.paid_at,
+                    p.verified_at
+                FROM payments p
+                INNER JOIN users u
+                    ON u.id = p.user_id
+                INNER JOIN bills b
+                    ON b.id = p.bill_id
+                WHERE p.status = 'paid'
+                ORDER BY
+                    p.verified_at DESC NULLS LAST,
+                    u.fullname ASC
             `);
 
-            const configResult = await pool.query(`
-                SELECT
-                    bank_name,
-                    account_number,
-                    account_holder,
-                    qris_nmid,
-                    qris_payload,
-                    updated_at
+            const config = await pool.query(`
+                SELECT *
                 FROM payment_config
                 WHERE id = 1
+                LIMIT 1
             `);
 
-            const totalMembersResult = await pool.query(`
-                SELECT COUNT(*)::INTEGER AS total
-                FROM users
-                WHERE role = 'member'
-            `);
-
-            const lunasResult = await pool.query(`
-                SELECT COUNT(*)::INTEGER AS total
-                FROM payments
-                WHERE status = 'verified'
-            `);
-
-            const menunggakResult = await pool.query(`
-                SELECT COUNT(*)::INTEGER AS total
-                FROM payments
-                WHERE status != 'verified'
-            `);
-
-            const kasResult = await pool.query(`
+            const stats = await pool.query(`
                 SELECT
-                    COALESCE(
-                        SUM(amount) FILTER (
-                            WHERE status = 'verified'
-                        ),
-                        0
-                    ) AS total
-                FROM payments
+                    (
+                        SELECT COUNT(*)
+                        FROM users
+                        WHERE role = 'member'
+                    ) AS total_members,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM payments
+                        WHERE status = 'paid'
+                    ) AS total_lunas,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM payments
+                        WHERE status <> 'paid'
+                    ) AS total_menunggak,
+
+                    (
+                        SELECT COALESCE(SUM(amount),0)
+                        FROM payments
+                        WHERE status = 'paid'
+                    ) AS total_kas
             `);
-
-            const totalMembers =
-                Number(totalMembersResult.rows[0].total) || 0;
-
-            const totalLunas =
-                Number(lunasResult.rows[0].total) || 0;
-
-            const totalMenunggak =
-                Number(menunggakResult.rows[0].total) || 0;
-
-            const totalKas =
-                Number(kasResult.rows[0].total) || 0;
 
             res.json({
                 success: true,
 
                 stats: {
-                    total_members: totalMembers,
-                    total_lunas: totalLunas,
-                    total_menunggak: totalMenunggak,
-                    total_kas: totalKas,
+                    totalMembers:
+                        Number(
+                            stats.rows[0].total_members || 0
+                        ),
+
+                    totalLunas:
+                        Number(
+                            stats.rows[0].total_lunas || 0
+                        ),
+
+                    totalMenunggak:
+                        Number(
+                            stats.rows[0].total_menunggak || 0
+                        ),
+
+                    totalKas:
+                        Number(
+                            stats.rows[0].total_kas || 0
+                        ),
                 },
 
-                users: usersResult.rows,
+                users: users.rows,
+                bills: bills.rows,
+                unpaid: unpaid.rows,
+                paid: paid.rows,
 
-                members: usersResult.rows.filter(
-                    (user) => user.role === "member"
-                ),
-
-                payments: paymentsResult.rows,
-
-                bills: billsResult.rows,
-
-                payment_config:
-                    configResult.rows[0] || {
-                        bank_name: "",
-                        account_number: "",
-                        account_holder: "",
-                        qris_nmid: "",
-                        qris_payload: "",
-                    },
+                paymentConfig:
+                    config.rows[0] || null,
             });
         } catch (err) {
             console.error("[ADMIN DATA ERROR]", err);
@@ -704,44 +1115,37 @@ app.get(
 );
 
 /* =========================================================
-   ADMIN CREATE BILL
+   ADMIN CREATE MASS BILL
 ========================================================= */
 
 app.post(
-    "/api/admin/bills",
-    authenticate,
-    adminOnly,
+    "/api/admin/create-bill",
+    authRequired,
+    adminRequired,
     async (req, res) => {
         const client = await pool.connect();
 
         try {
-            await initDatabase();
+            const description = String(
+                req.body.description || ""
+            ).trim();
 
-            const {
-                description,
-                amount,
-            } = req.body;
+            const amount = Number(req.body.amount);
 
-            const cleanDescription =
-                String(description || "").trim();
-
-            const cleanAmount = Number(amount);
-
-            if (!cleanDescription) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Nama/keterangan iuran wajib diisi.",
-                });
+            if (!description) {
+                return sendError(
+                    res,
+                    400,
+                    "Nama/keterangan iuran wajib diisi."
+                );
             }
 
-            if (
-                !Number.isFinite(cleanAmount) ||
-                cleanAmount <= 0
-            ) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Nominal iuran tidak valid.",
-                });
+            if (!Number.isFinite(amount) || amount <= 0) {
+                return sendError(
+                    res,
+                    400,
+                    "Nominal iuran tidak valid."
+                );
             }
 
             await client.query("BEGIN");
@@ -751,142 +1155,70 @@ app.post(
                 INSERT INTO bills
                 (
                     description,
-                    amount
+                    amount,
+                    created_by
                 )
-                VALUES
-                ($1, $2)
-                RETURNING *
+                VALUES ($1,$2,$3)
+                RETURNING id, description, amount, created_at
                 `,
                 [
-                    cleanDescription,
-                    cleanAmount,
+                    description,
+                    amount,
+                    req.user.id,
                 ]
             );
 
             const bill = billResult.rows[0];
 
-            const usersResult = await client.query(`
-                SELECT id
+            /*
+             * MASSAL:
+             * Buat tagihan untuk seluruh member.
+             */
+            await client.query(
+                `
+                INSERT INTO payments
+                (
+                    bill_id,
+                    user_id,
+                    amount,
+                    status
+                )
+                SELECT
+                    $1,
+                    id,
+                    $2,
+                    'pending'
                 FROM users
                 WHERE role = 'member'
-                ORDER BY id
-            `);
-
-            for (const user of usersResult.rows) {
-                await client.query(
-                    `
-                    INSERT INTO payments
-                    (
-                        bill_id,
-                        user_id,
-                        amount,
-                        status
-                    )
-                    VALUES
-                    ($1, $2, $3, 'pending')
-                    `,
-                    [
-                        bill.id,
-                        user.id,
-                        cleanAmount,
-                    ]
-                );
-            }
+                `,
+                [
+                    bill.id,
+                    amount,
+                ]
+            );
 
             await client.query("COMMIT");
 
             res.json({
                 success: true,
                 message:
-                    `Iuran berhasil diterbitkan kepada ${usersResult.rows.length} prajurit.`,
+                    "Iuran berhasil diterbitkan ke seluruh anggota.",
                 bill,
-                total_members:
-                    usersResult.rows.length,
             });
         } catch (err) {
             await client.query("ROLLBACK");
 
-            console.error("[CREATE BILL ERROR]", err);
+            console.error(
+                "[CREATE BILL ERROR]",
+                err
+            );
 
             res.status(500).json({
                 success: false,
-                message:
-                    "Gagal menerbitkan iuran: " +
-                    err.message,
+                message: err.message,
             });
         } finally {
             client.release();
-        }
-    }
-);
-
-/* =========================================================
-   MEMBER SUBMIT PAYMENT
-========================================================= */
-
-app.post(
-    "/api/member/pay",
-    authenticate,
-    async (req, res) => {
-        try {
-            await initDatabase();
-
-            const {
-                payment_id,
-                note,
-            } = req.body;
-
-            const paymentId = Number(payment_id);
-
-            if (!Number.isInteger(paymentId)) {
-                return res.status(400).json({
-                    success: false,
-                    message: "ID pembayaran tidak valid.",
-                });
-            }
-
-            const result = await pool.query(
-                `
-                UPDATE payments
-                SET
-                    status = 'submitted',
-                    note = $1,
-                    paid_at = CURRENT_TIMESTAMP
-                WHERE id = $2
-                  AND user_id = $3
-                  AND status != 'verified'
-                RETURNING *
-                `,
-                [
-                    String(note || ""),
-                    paymentId,
-                    req.user.id,
-                ]
-            );
-
-            if (result.rows.length === 0) {
-                return res.status(400).json({
-                    success: false,
-                    message:
-                        "Tagihan tidak ditemukan atau sudah diverifikasi.",
-                });
-            }
-
-            res.json({
-                success: true,
-                message:
-                    "Pembayaran berhasil dikirim untuk verifikasi.",
-                payment: result.rows[0],
-            });
-        } catch (err) {
-            console.error("[MEMBER PAY ERROR]", err);
-
-            res.status(500).json({
-                success: false,
-                message:
-                    "Gagal mengirim pembayaran: " +
-                    err.message,
-            });
         }
     }
 );
@@ -896,55 +1228,62 @@ app.post(
 ========================================================= */
 
 app.post(
-    "/api/admin/payments/:id/verify",
-    authenticate,
-    adminOnly,
+    "/api/admin/verify-payment",
+    authRequired,
+    adminRequired,
     async (req, res) => {
         try {
-            await initDatabase();
+            const paymentId = Number(
+                req.body.payment_id
+            );
 
-            const paymentId = Number(req.params.id);
-
-            if (!Number.isInteger(paymentId)) {
-                return res.status(400).json({
-                    success: false,
-                    message: "ID pembayaran tidak valid.",
-                });
+            if (!paymentId) {
+                return sendError(
+                    res,
+                    400,
+                    "ID pembayaran tidak valid."
+                );
             }
 
             const result = await pool.query(
                 `
                 UPDATE payments
                 SET
-                    status = 'verified',
-                    verified_at = CURRENT_TIMESTAMP
-                WHERE id = $1
+                    status = 'paid',
+                    verified_at = CURRENT_TIMESTAMP,
+                    verified_by = $1
+                WHERE id = $2
                 RETURNING *
                 `,
-                [paymentId]
+                [
+                    req.user.id,
+                    paymentId,
+                ]
             );
 
             if (result.rows.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Pembayaran tidak ditemukan.",
-                });
+                return sendError(
+                    res,
+                    404,
+                    "Data pembayaran tidak ditemukan."
+                );
             }
 
             res.json({
                 success: true,
                 message:
-                    "Pembayaran berhasil diverifikasi.",
+                    "Pembayaran berhasil diverifikasi sebagai LUNAS.",
                 payment: result.rows[0],
             });
         } catch (err) {
-            console.error("[VERIFY PAYMENT ERROR]", err);
+            console.error(
+                "[VERIFY PAYMENT ERROR]",
+                err
+            );
 
             res.status(500).json({
                 success: false,
-                message:
-                    "Gagal memverifikasi pembayaran: " +
-                    err.message,
+                message: err.message,
             });
         }
     }
@@ -956,21 +1295,31 @@ app.post(
 
 app.post(
     "/api/admin/payment-config",
-    authenticate,
-    adminOnly,
+    authRequired,
+    adminRequired,
     async (req, res) => {
         try {
-            await initDatabase();
+            const bankName = String(
+                req.body.bank_name || ""
+            ).trim();
 
-            const {
-                bank_name,
-                account_number,
-                account_holder,
-                qris_nmid,
-                qris_payload,
-            } = req.body;
+            const accountNumber = String(
+                req.body.account_number || ""
+            ).trim();
 
-            const result = await pool.query(
+            const accountHolder = String(
+                req.body.account_holder || ""
+            ).trim();
+
+            const qrisNmid = String(
+                req.body.qris_nmid || ""
+            ).trim();
+
+            const qrisPayload = String(
+                req.body.qris_payload || ""
+            ).trim();
+
+            await pool.query(
                 `
                 INSERT INTO payment_config
                 (
@@ -983,15 +1332,7 @@ app.post(
                     updated_at
                 )
                 VALUES
-                (
-                    1,
-                    $1,
-                    $2,
-                    $3,
-                    $4,
-                    $5,
-                    CURRENT_TIMESTAMP
-                )
+                (1,$1,$2,$3,$4,$5,CURRENT_TIMESTAMP)
                 ON CONFLICT (id)
                 DO UPDATE SET
                     bank_name = EXCLUDED.bank_name,
@@ -1000,14 +1341,13 @@ app.post(
                     qris_nmid = EXCLUDED.qris_nmid,
                     qris_payload = EXCLUDED.qris_payload,
                     updated_at = CURRENT_TIMESTAMP
-                RETURNING *
                 `,
                 [
-                    String(bank_name || ""),
-                    String(account_number || ""),
-                    String(account_holder || ""),
-                    String(qris_nmid || ""),
-                    String(qris_payload || ""),
+                    bankName,
+                    accountNumber,
+                    accountHolder,
+                    qrisNmid,
+                    qrisPayload,
                 ]
             );
 
@@ -1015,7 +1355,6 @@ app.post(
                 success: true,
                 message:
                     "Pengaturan rekening dan QRIS berhasil disimpan.",
-                config: result.rows[0],
             });
         } catch (err) {
             console.error(
@@ -1025,59 +1364,70 @@ app.post(
 
             res.status(500).json({
                 success: false,
-                message:
-                    "Gagal menyimpan pengaturan pembayaran: " +
-                    err.message,
+                message: err.message,
             });
         }
     }
 );
 
 /* =========================================================
-   UPDATE USER PROFILE
+   UPDATE OWN ACCOUNT
 ========================================================= */
 
 app.put(
-    "/api/user/profile",
-    authenticate,
+    "/api/settings",
+    authRequired,
     async (req, res) => {
         try {
-            await initDatabase();
+            const fullname = String(
+                req.body.fullname || ""
+            ).trim();
 
-            const {
-                fullname,
-                pangkat,
-                nrp,
-                password,
-            } = req.body;
+            const pangkat = String(
+                req.body.pangkat || "Prada"
+            ).trim();
 
-            if (!fullname || !nrp) {
-                return res.status(400).json({
-                    success: false,
-                    message:
-                        "Nama lengkap dan NRP wajib diisi.",
-                });
-            }
+            const nrp = String(
+                req.body.nrp || ""
+            ).trim();
 
-            const userResult = await pool.query(
-                `
-                SELECT *
-                FROM users
-                WHERE id = $1
-                `,
-                [req.user.id]
+            const password = String(
+                req.body.password || ""
             );
 
-            if (userResult.rows.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: "User tidak ditemukan.",
-                });
+            if (!fullname || !nrp) {
+                return sendError(
+                    res,
+                    400,
+                    "Nama dan NRP wajib diisi."
+                );
             }
 
-            if (password && password.trim()) {
-                const hash = await bcrypt.hash(
-                    password.trim(),
+            const duplicate = await pool.query(
+                `
+                SELECT id
+                FROM users
+                WHERE LOWER(nrp) = LOWER($1)
+                  AND id <> $2
+                LIMIT 1
+                `,
+                [
+                    nrp,
+                    req.user.id,
+                ]
+            );
+
+            if (duplicate.rows.length > 0) {
+                return sendError(
+                    res,
+                    400,
+                    "NRP sudah digunakan oleh personel lain."
+                );
+            }
+
+            if (password) {
+                const hashed = await bcrypt.hash(
+                    password,
                     10
                 );
 
@@ -1092,10 +1442,10 @@ app.put(
                     WHERE id = $5
                     `,
                     [
-                        fullname.trim(),
-                        String(pangkat || "Prada").trim(),
-                        nrp.trim(),
-                        hash,
+                        fullname,
+                        pangkat,
+                        nrp,
+                        hashed,
                         req.user.id,
                     ]
                 );
@@ -1110,9 +1460,9 @@ app.put(
                     WHERE id = $4
                     `,
                     [
-                        fullname.trim(),
-                        String(pangkat || "Prada").trim(),
-                        nrp.trim(),
+                        fullname,
+                        pangkat,
+                        nrp,
                         req.user.id,
                     ]
                 );
@@ -1136,20 +1486,18 @@ app.put(
             res.json({
                 success: true,
                 message:
-                    "Data akun berhasil diperbarui.",
+                    "Profil berhasil diperbarui.",
                 user: updated.rows[0],
             });
         } catch (err) {
             console.error(
-                "[UPDATE PROFILE ERROR]",
+                "[SETTINGS ERROR]",
                 err
             );
 
             res.status(500).json({
                 success: false,
-                message:
-                    "Gagal memperbarui akun: " +
-                    err.message,
+                message: err.message,
             });
         }
     }
@@ -1160,41 +1508,69 @@ app.put(
 ========================================================= */
 
 app.put(
-    "/api/admin/users/:id",
-    authenticate,
-    adminOnly,
+    "/api/admin/user",
+    authRequired,
+    adminRequired,
     async (req, res) => {
         try {
-            await initDatabase();
+            const userId = Number(
+                req.body.id
+            );
 
-            const userId = Number(req.params.id);
+            const fullname = String(
+                req.body.fullname || ""
+            ).trim();
 
-            const {
-                fullname,
-                pangkat,
-                nrp,
-                role,
-                password,
-            } = req.body;
+            const pangkat = String(
+                req.body.pangkat || "Prada"
+            ).trim();
 
-            if (!Number.isInteger(userId)) {
-                return res.status(400).json({
-                    success: false,
-                    message: "ID user tidak valid.",
-                });
+            const nrp = String(
+                req.body.nrp || ""
+            ).trim();
+
+            const role =
+                req.body.role === "admin"
+                    ? "admin"
+                    : "member";
+
+            const password = String(
+                req.body.password || ""
+            );
+
+            if (!userId || !fullname || !nrp) {
+                return sendError(
+                    res,
+                    400,
+                    "Data personel belum lengkap."
+                );
             }
 
-            if (!fullname || !nrp) {
-                return res.status(400).json({
-                    success: false,
-                    message:
-                        "Nama dan NRP wajib diisi.",
-                });
+            const duplicate = await pool.query(
+                `
+                SELECT id
+                FROM users
+                WHERE LOWER(nrp) = LOWER($1)
+                  AND id <> $2
+                LIMIT 1
+                `,
+                [
+                    nrp,
+                    userId,
+                ]
+            );
+
+            if (duplicate.rows.length > 0) {
+                return sendError(
+                    res,
+                    400,
+                    "NRP sudah digunakan."
+                );
             }
 
-            if (password && password.trim()) {
-                const hash = await bcrypt.hash(
-                    password.trim(),
+            if (password) {
+                const hashed = await bcrypt.hash(
+                    password,
                     10
                 );
 
@@ -1210,13 +1586,11 @@ app.put(
                     WHERE id = $6
                     `,
                     [
-                        fullname.trim(),
-                        String(pangkat || "Prada").trim(),
-                        nrp.trim(),
-                        role === "admin"
-                            ? "admin"
-                            : "member",
-                        hash,
+                        fullname,
+                        pangkat,
+                        nrp,
+                        role,
+                        hashed,
                         userId,
                     ]
                 );
@@ -1232,37 +1606,19 @@ app.put(
                     WHERE id = $5
                     `,
                     [
-                        fullname.trim(),
-                        String(pangkat || "Prada").trim(),
-                        nrp.trim(),
-                        role === "admin"
-                            ? "admin"
-                            : "member",
+                        fullname,
+                        pangkat,
+                        nrp,
+                        role,
                         userId,
                     ]
                 );
             }
 
-            const result = await pool.query(
-                `
-                SELECT
-                    id,
-                    fullname,
-                    pangkat,
-                    nrp,
-                    username,
-                    role
-                FROM users
-                WHERE id = $1
-                `,
-                [userId]
-            );
-
             res.json({
                 success: true,
                 message:
                     "Data personel berhasil diperbarui.",
-                user: result.rows[0],
             });
         } catch (err) {
             console.error(
@@ -1272,16 +1628,88 @@ app.put(
 
             res.status(500).json({
                 success: false,
-                message:
-                    "Gagal mengubah data personel: " +
-                    err.message,
+                message: err.message,
             });
         }
     }
 );
 
 /* =========================================================
-   FALLBACK FRONTEND
+   DELETE USER
+========================================================= */
+
+app.delete(
+    "/api/admin/user/:id",
+    authRequired,
+    adminRequired,
+    async (req, res) => {
+        try {
+            const userId = Number(
+                req.params.id
+            );
+
+            if (!userId) {
+                return sendError(
+                    res,
+                    400,
+                    "ID personel tidak valid."
+                );
+            }
+
+            if (userId === Number(req.user.id)) {
+                return sendError(
+                    res,
+                    400,
+                    "Akun admin yang sedang digunakan tidak dapat dihapus."
+                );
+            }
+
+            await pool.query(
+                `
+                DELETE FROM payments
+                WHERE user_id = $1
+                `,
+                [userId]
+            );
+
+            const result = await pool.query(
+                `
+                DELETE FROM users
+                WHERE id = $1
+                RETURNING id
+                `,
+                [userId]
+            );
+
+            if (result.rows.length === 0) {
+                return sendError(
+                    res,
+                    404,
+                    "Personel tidak ditemukan."
+                );
+            }
+
+            res.json({
+                success: true,
+                message:
+                    "Personel berhasil dihapus.",
+            });
+        } catch (err) {
+            console.error(
+                "[DELETE USER ERROR]",
+                err
+            );
+
+            res.status(500).json({
+                success: false,
+                message: err.message,
+            });
+        }
+    }
+);
+
+/* =========================================================
+   SPA FALLBACK
 ========================================================= */
 
 app.get("*", (req, res) => {
@@ -1295,7 +1723,7 @@ app.get("*", (req, res) => {
 });
 
 /* =========================================================
-   VERCEL EXPORT
+   VERCEL
 ========================================================= */
 
 module.exports = app;
