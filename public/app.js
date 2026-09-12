@@ -1,16 +1,14 @@
 /* =========================================================
-   KIPAN A - FRONTEND
+   KIPAN A - FRONTEND APP
 ========================================================= */
 
-let adminData = null;
-let memberData = null;
-let currentPaymentId = null;
+"use strict";
 
 /* =========================================================
-   HELPER API
+   API HELPER
 ========================================================= */
 
-async function apiFetch(url, options = {}) {
+async function apiRequest(url, options = {}) {
     const token = localStorage.getItem("token");
 
     const headers = {
@@ -27,42 +25,24 @@ async function apiFetch(url, options = {}) {
         headers,
     });
 
-    let data;
+    let result;
 
     try {
-        data = await response.json();
-    } catch {
-        data = {
-            success: false,
-            message: "Server mengembalikan data tidak valid.",
-        };
-    }
-
-    if (response.status === 401) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-
-        updateNavVisibility();
-
-        showAlert(
-            "Sesi login sudah berakhir. Silakan login kembali.",
-            "error"
-        );
-
-        navigate("sec-auth");
-
+        result = await response.json();
+    } catch (err) {
         throw new Error(
-            data.message || "Unauthorized"
+            `Server mengembalikan respons yang tidak valid (${response.status}).`
         );
     }
 
-    if (!response.ok || data.success === false) {
+    if (!response.ok || result.success === false) {
         throw new Error(
-            data.message || "Terjadi kesalahan."
+            result.message ||
+                `Request gagal (${response.status}).`
         );
     }
 
-    return data;
+    return result;
 }
 
 /* =========================================================
@@ -98,7 +78,7 @@ function navigate(sectionId) {
 }
 
 /* =========================================================
-   NAVBAR
+   NAVIGATION VISIBILITY
 ========================================================= */
 
 function updateNavVisibility() {
@@ -128,10 +108,9 @@ function updateNavVisibility() {
 
         try {
             user = JSON.parse(userJson);
-        } catch {
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
-            return updateNavVisibility();
+        } catch (err) {
+            logout();
+            return;
         }
 
         if (navAuth)
@@ -157,8 +136,7 @@ function updateNavVisibility() {
                     "inline-block";
         } else {
             if (navAdmin)
-                navAdmin.style.display =
-                    "none";
+                navAdmin.style.display = "none";
         }
     } else {
         if (navAuth)
@@ -166,20 +144,16 @@ function updateNavVisibility() {
                 "inline-block";
 
         if (navDashboard)
-            navDashboard.style.display =
-                "none";
+            navDashboard.style.display = "none";
 
         if (navSettings)
-            navSettings.style.display =
-                "none";
+            navSettings.style.display = "none";
 
         if (navAdmin)
-            navAdmin.style.display =
-                "none";
+            navAdmin.style.display = "none";
 
         if (navLogout)
-            navLogout.style.display =
-                "none";
+            navLogout.style.display = "none";
     }
 }
 
@@ -210,7 +184,7 @@ if (formLogin) {
 
             try {
                 const result =
-                    await apiFetch(
+                    await apiRequest(
                         "/api/login",
                         {
                             method: "POST",
@@ -315,7 +289,7 @@ if (formRegister) {
 
             try {
                 const result =
-                    await apiFetch(
+                    await apiRequest(
                         "/api/register",
                         {
                             method: "POST",
@@ -355,9 +329,6 @@ if (formRegister) {
 function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-
-    adminData = null;
-    memberData = null;
 
     updateNavVisibility();
 
@@ -403,10 +374,46 @@ function showAlert(message, type) {
 
     alertBox.style.color = "#fff";
 
-    setTimeout(() => {
-        alertBox.style.display =
-            "none";
-    }, 4000);
+    clearTimeout(
+        window.__kipanAlertTimer
+    );
+
+    window.__kipanAlertTimer =
+        setTimeout(() => {
+            alertBox.style.display =
+                "none";
+        }, 4000);
+}
+
+/* =========================================================
+   FORMAT RUPIAH
+========================================================= */
+
+function formatRupiah(value) {
+    const number =
+        Number(value || 0);
+
+    return (
+        "Rp " +
+        new Intl.NumberFormat(
+            "id-ID"
+        ).format(number)
+    );
+}
+
+/* =========================================================
+   ESCAPE HTML
+========================================================= */
+
+function escapeHtml(value) {
+    return String(
+        value == null ? "" : value
+    )
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 /* =========================================================
@@ -414,20 +421,35 @@ function showAlert(message, type) {
 ========================================================= */
 
 async function loadMemberDashboard() {
+    const userJson =
+        localStorage.getItem("user");
+
+    if (!userJson) {
+        navigate("sec-auth");
+        return;
+    }
+
     try {
         const result =
-            await apiFetch(
+            await apiRequest(
                 "/api/member/data"
             );
 
-        memberData = result;
+        /*
+         * Update local user.
+         */
+        if (result.user) {
+            localStorage.setItem(
+                "user",
+                JSON.stringify(
+                    result.user
+                )
+            );
+        }
 
-        localStorage.setItem(
-            "user",
-            JSON.stringify(
-                result.user
-            )
-        );
+        const user =
+            result.user ||
+            JSON.parse(userJson);
 
         const dashUser =
             document.getElementById(
@@ -436,10 +458,10 @@ async function loadMemberDashboard() {
 
         if (dashUser) {
             dashUser.innerText =
-                `${result.user.fullname} (${result.user.pangkat} - NRP: ${result.user.nrp})`;
+                `${user.fullname} (${user.pangkat} - NRP: ${user.nrp})`;
         }
 
-        renderMemberBills(
+        renderMemberPayments(
             result.bills || []
         );
     } catch (err) {
@@ -450,31 +472,34 @@ async function loadMemberDashboard() {
 
         showAlert(
             err.message ||
-                "Gagal mengambil data prajurit.",
+                "Gagal mengambil data iuran.",
             "error"
         );
     }
 }
 
 /* =========================================================
-   MEMBER BILLS
+   RENDER MEMBER PAYMENTS
 ========================================================= */
 
-function renderMemberBills(bills) {
-    const table =
+function renderMemberPayments(
+    bills
+) {
+    const tbody =
         document.getElementById(
             "member-pay-table"
         );
 
-    if (!table) return;
-
-    table.innerHTML = "";
+    if (!tbody) {
+        return;
+    }
 
     if (!bills.length) {
-        table.innerHTML = `
+        tbody.innerHTML = `
             <tr>
-                <td colspan="5" style="text-align:center;">
-                    Belum ada tagihan iuran.
+                <td colspan="5"
+                    style="text-align:center;">
+                    BELUM ADA TAGIHAN IURAN
                 </td>
             </tr>
         `;
@@ -482,240 +507,128 @@ function renderMemberBills(bills) {
         return;
     }
 
-    bills.forEach((bill) => {
-        const row =
-            document.createElement("tr");
+    tbody.innerHTML =
+        bills
+            .map((bill) => {
+                const status =
+                    String(
+                        bill.status ||
+                            "pending"
+                    ).toLowerCase();
 
-        const statusText =
-            bill.status === "verified"
-                ? "LUNAS"
-                : bill.status ===
-                  "submitted"
-                ? "MENUNGGU VERIFIKASI"
-                : "BELUM BAYAR";
+                let statusText =
+                    "BELUM BAYAR";
 
-        let action = "";
+                if (
+                    status ===
+                    "pending"
+                ) {
+                    statusText =
+                        bill.paid_at
+                            ? "MENUNGGU VERIFIKASI"
+                            : "BELUM BAYAR";
+                }
 
-        if (
-            bill.status !==
-            "verified"
-        ) {
-            action = `
-                <button
-                    class="btn-action"
-                    onclick="submitPayment(${bill.payment_id})"
-                >
-                    BAYAR / KONFIRMASI
-                </button>
-            `;
-        } else {
-            action = `
-                <span style="color:#2ecc71;font-weight:bold;">
-                    ✓ TERVERIFIKASI
-                </span>
-            `;
-        }
+                if (
+                    status === "paid"
+                ) {
+                    statusText =
+                        "LUNAS";
+                }
 
-        row.innerHTML = `
-            <td>${bill.bill_id}</td>
+                let action = "";
 
-            <td>
-                ${escapeHtml(
-                    bill.description
-                )}
-            </td>
+                if (
+                    status === "paid"
+                ) {
+                    action = `
+                        <span
+                            style="
+                                color:#2ecc71;
+                                font-weight:bold;
+                            "
+                        >
+                            ✓ LUNAS
+                        </span>
+                    `;
+                } else if (
+                    bill.paid_at
+                ) {
+                    action = `
+                        <span
+                            style="
+                                color:#f1c40f;
+                                font-weight:bold;
+                            "
+                        >
+                            MENUNGGU VERIFIKASI
+                        </span>
+                    `;
+                } else {
+                    action = `
+                        <button
+                            type="button"
+                            class="btn-action"
+                            onclick="payBill(${Number(
+                                bill.bill_id
+                            )})"
+                        >
+                            BAYAR / KONFIRMASI
+                        </button>
+                    `;
+                }
 
-            <td>
-                ${formatRupiah(
-                    bill.amount
-                )}
-            </td>
+                return `
+                    <tr>
+                        <td>
+                            #${escapeHtml(
+                                bill.bill_id
+                            )}
+                        </td>
 
-            <td>
-                <strong>
-                    ${statusText}
-                </strong>
-            </td>
+                        <td>
+                            ${escapeHtml(
+                                bill.description
+                            )}
+                        </td>
 
-            <td>
-                ${action}
-            </td>
-        `;
+                        <td>
+                            ${formatRupiah(
+                                bill.amount
+                            )}
+                        </td>
 
-        table.appendChild(row);
-    });
+                        <td>
+                            ${statusText}
+                        </td>
+
+                        <td>
+                            ${action}
+                        </td>
+                    </tr>
+                `;
+            })
+            .join("");
 }
 
 /* =========================================================
-   SUBMIT PAYMENT
+   MEMBER PAY
 ========================================================= */
 
-async function submitPayment(paymentId) {
-    currentPaymentId =
-        paymentId;
-
-    const config =
-        memberData?.payment_config ||
-        {};
-
-    const bill =
-        (memberData?.bills || [])
-            .find(
-                (item) =>
-                    Number(
-                        item.payment_id
-                    ) ===
-                    Number(paymentId)
-            );
-
-    if (!bill) {
-        showAlert(
-            "Tagihan tidak ditemukan.",
-            "error"
-        );
-
-        return;
-    }
-
-    const modal =
-        document.getElementById(
-            "modal-qris"
-        );
-
-    if (!modal) {
-        await confirmPayment(
-            paymentId
-        );
-
-        return;
-    }
-
-    const info =
-        document.getElementById(
-            "qris-bill-info"
-        );
-
-    if (info) {
-        info.innerText =
-            `${bill.description} - ${formatRupiah(
-                bill.amount
-            )}`;
-    }
-
-    const bankName =
-        document.getElementById(
-            "modal-bank-name"
-        );
-
-    const bankAcc =
-        document.getElementById(
-            "modal-bank-acc"
-        );
-
-    const bankHolder =
-        document.getElementById(
-            "modal-bank-holder"
-        );
-
-    if (bankName) {
-        bankName.innerText =
-            config.bank_name ||
-            "-";
-    }
-
-    if (bankAcc) {
-        bankAcc.innerText =
-            config.account_number ||
-            "-";
-    }
-
-    if (bankHolder) {
-        bankHolder.innerText =
-            config.account_holder ||
-            "-";
-    }
-
-    const qrImage =
-        document.getElementById(
-            "qris-barcode"
-        );
-
-    if (
-        qrImage &&
-        config.qris_payload
-    ) {
-        qrImage.src =
-            "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
-            encodeURIComponent(
-                config.qris_payload
-            );
-    } else if (qrImage) {
-        qrImage.removeAttribute(
-            "src"
-        );
-    }
-
-    const radarText =
-        document.getElementById(
-            "radar-text"
-        );
-
-    if (radarText) {
-        radarText.innerText =
-            "Silakan lakukan pembayaran lalu konfirmasi.";
-    }
-
-    modal.style.display = "flex";
-}
-
-/* =========================================================
-   CLOSE QRIS
-========================================================= */
-
-function closeQris() {
-    const modal =
-        document.getElementById(
-            "modal-qris"
-        );
-
-    if (modal) {
-        modal.style.display =
-            "none";
-    }
-}
-
-/* =========================================================
-   CONFIRM PAYMENT
-========================================================= */
-
-async function confirmPayment(
-    paymentId
+async function payBill(
+    billId
 ) {
-    const confirmed =
-        window.confirm(
-            "Apakah pembayaran sudah dilakukan?"
-        );
-
-    if (!confirmed) {
-        return;
-    }
-
     try {
         const result =
-            await apiFetch(
+            await apiRequest(
                 "/api/member/pay",
                 {
                     method: "POST",
                     body: JSON.stringify({
-                        payment_id:
-                            paymentId,
-                        note:
-                            "Pembayaran dikonfirmasi oleh prajurit.",
+                        bill_id: billId,
                     }),
                 }
             );
-
-        closeQris();
 
         showAlert(
             result.message,
@@ -723,12 +636,20 @@ async function confirmPayment(
         );
 
         await loadMemberDashboard();
+
+        /*
+         * Buka QRIS/rekening setelah
+         * konfirmasi pembayaran.
+         */
+        await openQris(
+            billId
+        );
     } catch (err) {
         console.error(err);
 
         showAlert(
             err.message ||
-                "Gagal mengirim pembayaran.",
+                "Gagal mencatat pembayaran.",
             "error"
         );
     }
@@ -741,190 +662,216 @@ async function confirmPayment(
 async function loadAdminData() {
     try {
         const result =
-            await apiFetch(
+            await apiRequest(
                 "/api/admin/data"
             );
 
-        adminData = result;
+        /*
+         * STATS
+         */
+        const totalMembers =
+            document.getElementById(
+                "hud-total-members"
+            );
 
-        renderAdminStats(
-            result.stats
+        const totalLunas =
+            document.getElementById(
+                "hud-total-lunas"
+            );
+
+        const totalMenunggak =
+            document.getElementById(
+                "hud-total-menunggak"
+            );
+
+        const totalKas =
+            document.getElementById(
+                "hud-total-kas"
+            );
+
+        if (totalMembers) {
+            totalMembers.innerText =
+                `${result.stats.totalMembers} Orang`;
+        }
+
+        if (totalLunas) {
+            totalLunas.innerText =
+                `${result.stats.totalLunas} Tagihan`;
+        }
+
+        if (totalMenunggak) {
+            totalMenunggak.innerText =
+                `${result.stats.totalMenunggak} Tagihan`;
+        }
+
+        if (totalKas) {
+            totalKas.innerText =
+                formatRupiah(
+                    result.stats.totalKas
+                );
+        }
+
+        /*
+         * USERS
+         */
+        renderAdminUsers(
+            result.users || []
         );
 
-        renderAdminPaymentConfig(
-            result.payment_config
+        /*
+         * UNPAID
+         */
+        renderUnpaid(
+            result.unpaid || []
         );
 
-        renderAdminTables(
-            result
+        /*
+         * PAID
+         */
+        renderPaid(
+            result.paid || []
+        );
+
+        /*
+         * PAYMENT CONFIG
+         */
+        renderPaymentConfig(
+            result.paymentConfig
         );
     } catch (err) {
         console.error(
-            "[ADMIN DATA ERROR]",
+            "[ADMIN DATA]",
             err
         );
 
         showAlert(
-            err.message ||
-                "Gagal mengambil data panel Komando.",
+            "Gagal mengambil data panel Komando: " +
+                err.message,
             "error"
         );
     }
 }
 
 /* =========================================================
-   ADMIN STATS
+   ADMIN USERS TABLE
 ========================================================= */
 
-function renderAdminStats(
-    stats
+function renderAdminUsers(
+    users
 ) {
-    const totalMembers =
+    const tbody =
         document.getElementById(
-            "hud-total-members"
+            "admin-user-table"
         );
 
-    const totalLunas =
-        document.getElementById(
-            "hud-total-lunas"
-        );
-
-    const totalMenunggak =
-        document.getElementById(
-            "hud-total-menunggak"
-        );
-
-    const totalKas =
-        document.getElementById(
-            "hud-total-kas"
-        );
-
-    if (totalMembers) {
-        totalMembers.innerText =
-            `${stats.total_members || 0} Orang`;
+    if (!tbody) {
+        return;
     }
 
-    if (totalLunas) {
-        totalLunas.innerText =
-            `${stats.total_lunas || 0} Tagihan`;
+    if (!users.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6"
+                    style="text-align:center;">
+                    BELUM ADA PERSONEL
+                </td>
+            </tr>
+        `;
+
+        return;
     }
 
-    if (totalMenunggak) {
-        totalMenunggak.innerText =
-            `${stats.total_menunggak || 0} Tagihan`;
-    }
+    tbody.innerHTML =
+        users
+            .map((user) => {
+                return `
+                    <tr>
+                        <td>
+                            ${escapeHtml(
+                                user.id
+                            )}
+                        </td>
 
-    if (totalKas) {
-        totalKas.innerText =
-            formatRupiah(
-                stats.total_kas || 0
-            );
-    }
-}
+                        <td>
+                            ${escapeHtml(
+                                user.fullname
+                            )}
+                        </td>
 
-/* =========================================================
-   ADMIN PAYMENT CONFIG
-========================================================= */
+                        <td>
+                            ${escapeHtml(
+                                user.pangkat
+                            )}
+                        </td>
 
-function renderAdminPaymentConfig(
-    config
-) {
-    if (!config) return;
+                        <td>
+                            ${escapeHtml(
+                                user.nrp
+                            )}
+                        </td>
 
-    const bankName =
-        document.getElementById(
-            "cfg-bank-name"
-        );
+                        <td>
+                            ${escapeHtml(
+                                user.role
+                            )}
+                        </td>
 
-    const accountNumber =
-        document.getElementById(
-            "cfg-account-number"
-        );
+                        <td>
+                            <button
+                                type="button"
+                                class="btn-action"
+                                onclick='editAdminUser(${JSON.stringify(
+                                    user
+                                )})'
+                            >
+                                EDIT
+                            </button>
 
-    const accountHolder =
-        document.getElementById(
-            "cfg-account-holder"
-        );
-
-    const qrisNmid =
-        document.getElementById(
-            "cfg-qris-nmid"
-        );
-
-    const qrisPayload =
-        document.getElementById(
-            "cfg-qris-payload"
-        );
-
-    if (bankName)
-        bankName.value =
-            config.bank_name || "";
-
-    if (accountNumber)
-        accountNumber.value =
-            config.account_number || "";
-
-    if (accountHolder)
-        accountHolder.value =
-            config.account_holder || "";
-
-    if (qrisNmid)
-        qrisNmid.value =
-            config.qris_nmid || "";
-
-    if (qrisPayload)
-        qrisPayload.value =
-            config.qris_payload || "";
-}
-
-/* =========================================================
-   ADMIN TABLES
-========================================================= */
-
-function renderAdminTables(
-    data
-) {
-    renderUnpaidTable(
-        data.payments || []
-    );
-
-    renderPaidTable(
-        data.payments || []
-    );
-
-    renderUsersTable(
-        data.users || []
-    );
+                            ${
+                                user.role !==
+                                "admin"
+                                    ? `
+                                        <button
+                                            type="button"
+                                            class="btn-action btn-danger"
+                                            onclick="deleteAdminUser(${Number(
+                                                user.id
+                                            )})"
+                                        >
+                                            HAPUS
+                                        </button>
+                                    `
+                                    : ""
+                            }
+                        </td>
+                    </tr>
+                `;
+            })
+            .join("");
 }
 
 /* =========================================================
    UNPAID TABLE
 ========================================================= */
 
-function renderUnpaidTable(
-    payments
+function renderUnpaid(
+    rows
 ) {
-    const table =
+    const tbody =
         document.getElementById(
             "table-belum-bayar"
         );
 
-    if (!table) return;
+    if (!tbody) {
+        return;
+    }
 
-    table.innerHTML = "";
-
-    const unpaid =
-        payments.filter(
-            (payment) =>
-                payment.status !==
-                "verified"
-        );
-
-    if (!unpaid.length) {
-        table.innerHTML = `
+    if (!rows.length) {
+        tbody.innerHTML = `
             <tr>
-                <td colspan="7" style="text-align:center;">
-                    Tidak ada prajurit yang menunggak.
+                <td colspan="7"
+                    style="text-align:center;color:#2ecc71;">
+                    TIDAK ADA TUNGGAKAN
                 </td>
             </tr>
         `;
@@ -932,101 +879,119 @@ function renderUnpaidTable(
         return;
     }
 
-    unpaid.forEach(
-        (payment) => {
-            const row =
-                document.createElement(
-                    "tr"
-                );
+    tbody.innerHTML =
+        rows
+            .map((row) => {
+                const sudahBayar =
+                    Boolean(
+                        row.paid_at
+                    );
 
-            const action =
-                payment.status ===
-                    "submitted"
-                    ? `
-                    <button
-                        class="btn-action"
-                        onclick="verifyPayment(${payment.payment_id})"
-                    >
-                        VERIFIKASI
-                    </button>
-                `
-                    : `
-                    <span style="color:#ffcc00;">
-                        BELUM BAYAR
-                    </span>
+                return `
+                    <tr>
+                        <td>
+                            #${escapeHtml(
+                                row.bill_id
+                            )}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(
+                                row.fullname
+                            )}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(
+                                row.nrp
+                            )}
+                        </td>
+
+                        <td>
+                            ${escapeHtml(
+                                row.description
+                            )}
+                        </td>
+
+                        <td>
+                            ${formatRupiah(
+                                row.amount
+                            )}
+                        </td>
+
+                        <td>
+                            ${
+                                sudahBayar
+                                    ? `
+                                        <span
+                                            style="
+                                                color:#f1c40f;
+                                                font-weight:bold;
+                                            "
+                                        >
+                                            MENUNGGU VERIFIKASI
+                                        </span>
+                                    `
+                                    : `
+                                        <span
+                                            style="
+                                                color:#e74c3c;
+                                                font-weight:bold;
+                                            "
+                                        >
+                                            BELUM BAYAR
+                                        </span>
+                                    `
+                            }
+                        </td>
+
+                        <td>
+                            ${
+                                sudahBayar
+                                    ? `
+                                        <button
+                                            type="button"
+                                            class="btn-action"
+                                            onclick="verifyPayment(${Number(
+                                                row.payment_id
+                                            )})"
+                                        >
+                                            VERIFIKASI LUNAS
+                                        </button>
+                                    `
+                                    : `
+                                        <span>-</span>
+                                    `
+                            }
+                        </td>
+                    </tr>
                 `;
-
-            row.innerHTML = `
-                <td>
-                    ${payment.payment_id}
-                </td>
-
-                <td>
-                    ${escapeHtml(
-                        payment.fullname
-                    )}
-                </td>
-
-                <td>
-                    ${escapeHtml(
-                        payment.nrp
-                    )}
-                </td>
-
-                <td>
-                    ${escapeHtml(
-                        payment.description
-                    )}
-                </td>
-
-                <td>
-                    ${formatRupiah(
-                        payment.amount
-                    )}
-                </td>
-
-                <td>
-                    ${payment.status}
-                </td>
-
-                <td>
-                    ${action}
-                </td>
-            `;
-
-            table.appendChild(row);
-        }
-    );
+            })
+            .join("");
 }
 
 /* =========================================================
    PAID TABLE
 ========================================================= */
 
-function renderPaidTable(
-    payments
+function renderPaid(
+    rows
 ) {
-    const table =
+    const tbody =
         document.getElementById(
             "table-sudah-bayar"
         );
 
-    if (!table) return;
+    if (!tbody) {
+        return;
+    }
 
-    table.innerHTML = "";
-
-    const paid =
-        payments.filter(
-            (payment) =>
-                payment.status ===
-                "verified"
-        );
-
-    if (!paid.length) {
-        table.innerHTML = `
+    if (!rows.length) {
+        tbody.innerHTML = `
             <tr>
-                <td colspan="6" style="text-align:center;">
-                    Belum ada pembayaran terverifikasi.
+                <td colspan="6"
+                    style="text-align:center;">
+                    BELUM ADA PEMBAYARAN LUNAS
                 </td>
             </tr>
         `;
@@ -1034,125 +999,55 @@ function renderPaidTable(
         return;
     }
 
-    paid.forEach(
-        (payment) => {
-            const row =
-                document.createElement(
-                    "tr"
-                );
+    tbody.innerHTML =
+        rows
+            .map((row) => {
+                return `
+                    <tr>
+                        <td>
+                            #${escapeHtml(
+                                row.bill_id
+                            )}
+                        </td>
 
-            row.innerHTML = `
-                <td>
-                    ${payment.payment_id}
-                </td>
+                        <td>
+                            ${escapeHtml(
+                                row.fullname
+                            )}
+                        </td>
 
-                <td>
-                    ${escapeHtml(
-                        payment.fullname
-                    )}
-                </td>
+                        <td>
+                            ${escapeHtml(
+                                row.nrp
+                            )}
+                        </td>
 
-                <td>
-                    ${escapeHtml(
-                        payment.nrp
-                    )}
-                </td>
+                        <td>
+                            ${escapeHtml(
+                                row.description
+                            )}
+                        </td>
 
-                <td>
-                    ${escapeHtml(
-                        payment.description
-                    )}
-                </td>
+                        <td>
+                            ${formatRupiah(
+                                row.amount
+                            )}
+                        </td>
 
-                <td>
-                    ${formatRupiah(
-                        payment.amount
-                    )}
-                </td>
-
-                <td style="color:#2ecc71;font-weight:bold;">
-                    ✓ LUNAS
-                </td>
-            `;
-
-            table.appendChild(row);
-        }
-    );
-}
-
-/* =========================================================
-   USERS TABLE
-========================================================= */
-
-function renderUsersTable(
-    users
-) {
-    const table =
-        document.getElementById(
-            "admin-user-table"
-        );
-
-    if (!table) return;
-
-    table.innerHTML = "";
-
-    if (!users.length) {
-        table.innerHTML = `
-            <tr>
-                <td colspan="6" style="text-align:center;">
-                    Belum ada anggota.
-                </td>
-            </tr>
-        `;
-
-        return;
-    }
-
-    users.forEach((user) => {
-        const row =
-            document.createElement(
-                "tr"
-            );
-
-        row.innerHTML = `
-            <td>
-                ${user.id}
-            </td>
-
-            <td>
-                ${escapeHtml(
-                    user.fullname
-                )}
-            </td>
-
-            <td>
-                ${escapeHtml(
-                    user.pangkat
-                )}
-            </td>
-
-            <td>
-                ${escapeHtml(
-                    user.nrp
-                )}
-            </td>
-
-            <td>
-                ${user.role}
-            </td>
-
-            <td>
-                <button
-                    class="btn-action"
-                    onclick="editAdminUser(${user.id})"
-                >
-                    EDIT
-                </button>
-            </td>
-        `;
-
-        table.appendChild(row);
-    });
+                        <td>
+                            <span
+                                style="
+                                    color:#2ecc71;
+                                    font-weight:bold;
+                                "
+                            >
+                                ✓ LUNAS
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            })
+            .join("");
 }
 
 /* =========================================================
@@ -1162,19 +1057,25 @@ function renderUsersTable(
 async function verifyPayment(
     paymentId
 ) {
-    const confirmed =
+    const ok =
         window.confirm(
             "Verifikasi pembayaran ini sebagai LUNAS?"
         );
 
-    if (!confirmed) return;
+    if (!ok) {
+        return;
+    }
 
     try {
         const result =
-            await apiFetch(
-                `/api/admin/payments/${paymentId}/verify`,
+            await apiRequest(
+                "/api/admin/verify-payment",
                 {
                     method: "POST",
+                    body: JSON.stringify({
+                        payment_id:
+                            paymentId,
+                    }),
                 }
             );
 
@@ -1196,7 +1097,85 @@ async function verifyPayment(
 }
 
 /* =========================================================
-   CREATE BILL
+   PAYMENT CONFIG FORM
+========================================================= */
+
+const formConfig =
+    document.getElementById(
+        "form-config-payment"
+    );
+
+if (formConfig) {
+    formConfig.addEventListener(
+        "submit",
+        async (e) => {
+            e.preventDefault();
+
+            const bankName =
+                document.getElementById(
+                    "cfg-bank-name"
+                ).value.trim();
+
+            const accountNumber =
+                document.getElementById(
+                    "cfg-account-number"
+                ).value.trim();
+
+            const accountHolder =
+                document.getElementById(
+                    "cfg-account-holder"
+                ).value.trim();
+
+            const qrisNmid =
+                document.getElementById(
+                    "cfg-qris-nmid"
+                ).value.trim();
+
+            const qrisPayload =
+                document.getElementById(
+                    "cfg-qris-payload"
+                ).value.trim();
+
+            try {
+                const result =
+                    await apiRequest(
+                        "/api/admin/payment-config",
+                        {
+                            method: "POST",
+                            body: JSON.stringify({
+                                bank_name:
+                                    bankName,
+                                account_number:
+                                    accountNumber,
+                                account_holder:
+                                    accountHolder,
+                                qris_nmid:
+                                    qrisNmid,
+                                qris_payload:
+                                    qrisPayload,
+                            }),
+                        }
+                    );
+
+                showAlert(
+                    result.message,
+                    "success"
+                );
+            } catch (err) {
+                console.error(err);
+
+                showAlert(
+                    err.message ||
+                        "Gagal menyimpan rekening.",
+                    "error"
+                );
+            }
+        }
+    );
+}
+
+/* =========================================================
+   ADMIN CREATE BILL
 ========================================================= */
 
 const formCreateBill =
@@ -1224,10 +1203,33 @@ if (formCreateBill) {
                     ).value
                 );
 
+            if (!description) {
+                showAlert(
+                    "Keterangan iuran wajib diisi.",
+                    "error"
+                );
+
+                return;
+            }
+
+            if (
+                !Number.isFinite(
+                    amount
+                ) ||
+                amount <= 0
+            ) {
+                showAlert(
+                    "Nominal iuran tidak valid.",
+                    "error"
+                );
+
+                return;
+            }
+
             try {
                 const result =
-                    await apiFetch(
-                        "/api/admin/bills",
+                    await apiRequest(
+                        "/api/admin/create-bill",
                         {
                             method: "POST",
                             body: JSON.stringify({
@@ -1259,91 +1261,16 @@ if (formCreateBill) {
 }
 
 /* =========================================================
-   PAYMENT CONFIG FORM
-========================================================= */
-
-const formPaymentConfig =
-    document.getElementById(
-        "form-config-payment"
-    );
-
-if (formPaymentConfig) {
-    formPaymentConfig.addEventListener(
-        "submit",
-        async (e) => {
-            e.preventDefault();
-
-            const bank_name =
-                document.getElementById(
-                    "cfg-bank-name"
-                ).value.trim();
-
-            const account_number =
-                document.getElementById(
-                    "cfg-account-number"
-                ).value.trim();
-
-            const account_holder =
-                document.getElementById(
-                    "cfg-account-holder"
-                ).value.trim();
-
-            const qris_nmid =
-                document.getElementById(
-                    "cfg-qris-nmid"
-                ).value.trim();
-
-            const qris_payload =
-                document.getElementById(
-                    "cfg-qris-payload"
-                ).value.trim();
-
-            try {
-                const result =
-                    await apiFetch(
-                        "/api/admin/payment-config",
-                        {
-                            method: "POST",
-                            body: JSON.stringify({
-                                bank_name,
-                                account_number,
-                                account_holder,
-                                qris_nmid,
-                                qris_payload,
-                            }),
-                        }
-                    );
-
-                showAlert(
-                    result.message,
-                    "success"
-                );
-
-                await loadAdminData();
-            } catch (err) {
-                console.error(err);
-
-                showAlert(
-                    err.message ||
-                        "Gagal menyimpan rekening.",
-                    "error"
-                );
-            }
-        }
-    );
-}
-
-/* =========================================================
    SETTINGS
 ========================================================= */
 
 function loadUserSettingsForm() {
     const userJson =
-        localStorage.getItem(
-            "user"
-        );
+        localStorage.getItem("user");
 
-    if (!userJson) return;
+    if (!userJson) {
+        return;
+    }
 
     let user;
 
@@ -1351,7 +1278,7 @@ function loadUserSettingsForm() {
         user = JSON.parse(
             userJson
         );
-    } catch {
+    } catch (err) {
         return;
     }
 
@@ -1370,21 +1297,25 @@ function loadUserSettingsForm() {
             "set-nrp"
         );
 
-    if (fullnameInput)
+    if (fullnameInput) {
         fullnameInput.value =
             user.fullname || "";
+    }
 
-    if (pangkatSelect)
+    if (pangkatSelect) {
         pangkatSelect.value =
-            user.pangkat || "Prada";
+            user.pangkat ||
+            "Prada";
+    }
 
-    if (nrpInput)
+    if (nrpInput) {
         nrpInput.value =
             user.nrp || "";
+    }
 }
 
 /* =========================================================
-   SETTINGS FORM
+   SETTINGS SUBMIT
 ========================================================= */
 
 const formSettings =
@@ -1424,8 +1355,8 @@ if (formSettings) {
 
             try {
                 const result =
-                    await apiFetch(
-                        "/api/user/profile",
+                    await apiRequest(
+                        "/api/settings",
                         {
                             method: "PUT",
                             body: JSON.stringify({
@@ -1437,16 +1368,26 @@ if (formSettings) {
                         }
                     );
 
-                localStorage.setItem(
-                    "user",
-                    JSON.stringify(
-                        result.user
-                    )
-                );
+                if (result.user) {
+                    localStorage.setItem(
+                        "user",
+                        JSON.stringify(
+                            result.user
+                        )
+                    );
+                }
 
-                document.getElementById(
-                    "set-password"
-                ).value = "";
+                const passwordInput =
+                    document.getElementById(
+                        "set-password"
+                    );
+
+                if (
+                    passwordInput
+                ) {
+                    passwordInput.value =
+                        "";
+                }
 
                 showAlert(
                     result.message,
@@ -1472,26 +1413,18 @@ if (formSettings) {
 ========================================================= */
 
 function editAdminUser(
-    userId
+    user
 ) {
-    if (!adminData) return;
-
-    const user =
-        (adminData.users || [])
-            .find(
-                (item) =>
-                    Number(item.id) ===
-                    Number(userId)
-            );
-
-    if (!user) return;
-
     const box =
         document.getElementById(
             "box-admin-edit-user"
         );
 
-    const idInput =
+    if (!box) {
+        return;
+    }
+
+    const id =
         document.getElementById(
             "adm-user-id"
         );
@@ -1521,9 +1454,9 @@ function editAdminUser(
             "adm-user-password"
         );
 
-    if (idInput)
-        idInput.value =
-            user.id;
+    if (id)
+        id.value =
+            user.id || "";
 
     if (fullname)
         fullname.value =
@@ -1531,7 +1464,8 @@ function editAdminUser(
 
     if (pangkat)
         pangkat.value =
-            user.pangkat || "Prada";
+            user.pangkat ||
+            "Prada";
 
     if (nrp)
         nrp.value =
@@ -1539,41 +1473,42 @@ function editAdminUser(
 
     if (role)
         role.value =
-            user.role || "member";
+            user.role ||
+            "member";
 
     if (password)
         password.value = "";
 
-    if (box) {
-        box.style.display =
-            "block";
+    box.style.display =
+        "block";
 
-        box.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-        });
-    }
+    box.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+    });
 }
 
 /* =========================================================
    ADMIN EDIT FORM
 ========================================================= */
 
-const formAdminEdit =
+const formAdminEditUser =
     document.getElementById(
         "form-admin-edit-user"
     );
 
-if (formAdminEdit) {
-    formAdminEdit.addEventListener(
+if (formAdminEditUser) {
+    formAdminEditUser.addEventListener(
         "submit",
         async (e) => {
             e.preventDefault();
 
             const id =
-                document.getElementById(
-                    "adm-user-id"
-                ).value;
+                Number(
+                    document.getElementById(
+                        "adm-user-id"
+                    ).value
+                );
 
             const fullname =
                 document
@@ -1606,11 +1541,12 @@ if (formAdminEdit) {
 
             try {
                 const result =
-                    await apiFetch(
-                        `/api/admin/users/${id}`,
+                    await apiRequest(
+                        "/api/admin/user",
                         {
                             method: "PUT",
                             body: JSON.stringify({
+                                id,
                                 fullname,
                                 pangkat,
                                 nrp,
@@ -1641,7 +1577,7 @@ if (formAdminEdit) {
 
                 showAlert(
                     err.message ||
-                        "Gagal mengubah data personel.",
+                        "Gagal menyimpan data personel.",
                     "error"
                 );
             }
@@ -1650,19 +1586,261 @@ if (formAdminEdit) {
 }
 
 /* =========================================================
+   DELETE USER
+========================================================= */
+
+async function deleteAdminUser(
+    userId
+) {
+    const ok =
+        window.confirm(
+            "Yakin ingin menghapus personel ini?"
+        );
+
+    if (!ok) {
+        return;
+    }
+
+    try {
+        const result =
+            await apiRequest(
+                `/api/admin/user/${userId}`,
+                {
+                    method: "DELETE",
+                }
+            );
+
+        showAlert(
+            result.message,
+            "success"
+        );
+
+        await loadAdminData();
+    } catch (err) {
+        console.error(err);
+
+        showAlert(
+            err.message ||
+                "Gagal menghapus personel.",
+            "error"
+        );
+    }
+}
+
+/* =========================================================
+   PAYMENT CONFIG RENDER
+========================================================= */
+
+function renderPaymentConfig(
+    config
+) {
+    if (!config) {
+        return;
+    }
+
+    const bankName =
+        document.getElementById(
+            "cfg-bank-name"
+        );
+
+    const accountNumber =
+        document.getElementById(
+            "cfg-account-number"
+        );
+
+    const accountHolder =
+        document.getElementById(
+            "cfg-account-holder"
+        );
+
+    const qrisNmid =
+        document.getElementById(
+            "cfg-qris-nmid"
+        );
+
+    const qrisPayload =
+        document.getElementById(
+            "cfg-qris-payload"
+        );
+
+    if (bankName) {
+        bankName.value =
+            config.bank_name || "";
+    }
+
+    if (accountNumber) {
+        accountNumber.value =
+            config.account_number ||
+            "";
+    }
+
+    if (accountHolder) {
+        accountHolder.value =
+            config.account_holder ||
+            "";
+    }
+
+    if (qrisNmid) {
+        qrisNmid.value =
+            config.qris_nmid || "";
+    }
+
+    if (qrisPayload) {
+        qrisPayload.value =
+            config.qris_payload ||
+            "";
+    }
+}
+
+/* =========================================================
+   QRIS
+========================================================= */
+
+async function openQris(
+    billId
+) {
+    try {
+        const result =
+            await apiRequest(
+                "/api/member/data"
+            );
+
+        const bill =
+            (result.bills || []).find(
+                (item) =>
+                    Number(
+                        item.bill_id
+                    ) ===
+                    Number(billId)
+            );
+
+        const config =
+            result.paymentConfig;
+
+        const modal =
+            document.getElementById(
+                "modal-qris"
+            );
+
+        if (!modal) {
+            return;
+        }
+
+        const info =
+            document.getElementById(
+                "qris-bill-info"
+            );
+
+        const bankName =
+            document.getElementById(
+                "modal-bank-name"
+            );
+
+        const bankAcc =
+            document.getElementById(
+                "modal-bank-acc"
+            );
+
+        const bankHolder =
+            document.getElementById(
+                "modal-bank-holder"
+            );
+
+        const qr =
+            document.getElementById(
+                "qris-barcode"
+            );
+
+        if (info) {
+            info.innerText =
+                bill
+                    ? `${bill.description} — ${formatRupiah(
+                          bill.amount
+                      )}`
+                    : "PEMBAYARAN KOMPI";
+        }
+
+        if (bankName) {
+            bankName.innerText =
+                config?.bank_name ||
+                "-";
+        }
+
+        if (bankAcc) {
+            bankAcc.innerText =
+                config?.account_number ||
+                "-";
+        }
+
+        if (bankHolder) {
+            bankHolder.innerText =
+                config?.account_holder ||
+                "-";
+        }
+
+        if (qr) {
+            const payload =
+                config?.qris_payload ||
+                config?.qris_nmid ||
+                "";
+
+            if (payload) {
+                qr.src =
+                    "https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=" +
+                    encodeURIComponent(
+                        payload
+                    );
+            } else {
+                qr.removeAttribute(
+                    "src"
+                );
+            }
+        }
+
+        modal.style.display =
+            "flex";
+
+        const radar =
+            document.getElementById(
+                "radar-text"
+            );
+
+        if (radar) {
+            radar.innerText =
+                "PEMBAYARAN DICATAT — MENUNGGU VERIFIKASI KOMANDO";
+        }
+    } catch (err) {
+        console.error(err);
+
+        showAlert(
+            err.message ||
+                "Gagal membuka data pembayaran.",
+            "error"
+        );
+    }
+}
+
+/* =========================================================
+   CLOSE QRIS
+========================================================= */
+
+function closeQris() {
+    const modal =
+        document.getElementById(
+            "modal-qris"
+        );
+
+    if (modal) {
+        modal.style.display =
+            "none";
+    }
+}
+
+/* =========================================================
    EXCEL EXPORT
 ========================================================= */
 
 function exportToExcel() {
-    if (!adminData) {
-        showAlert(
-            "Data admin belum dimuat.",
-            "error"
-        );
-
-        return;
-    }
-
     if (
         typeof XLSX ===
         "undefined"
@@ -1675,47 +1853,103 @@ function exportToExcel() {
         return;
     }
 
-    const rows =
-        (adminData.payments || [])
-            .map(
-                (payment) => ({
-                    ID:
-                        payment.payment_id,
-                    Prajurit:
-                        payment.fullname,
-                    Pangkat:
-                        payment.pangkat,
-                    NRP:
-                        payment.nrp,
-                    Iuran:
-                        payment.description,
-                    Nominal:
-                        Number(
-                            payment.amount
-                        ),
-                    Status:
-                        payment.status,
-                })
+    exportAdminExcel();
+}
+
+async function exportAdminExcel() {
+    try {
+        const result =
+            await apiRequest(
+                "/api/admin/data"
             );
 
-    const worksheet =
-        XLSX.utils.json_to_sheet(
-            rows
+        const rows = [];
+
+        /*
+         * HEADER
+         */
+        rows.push([
+            "ID TAGIHAN",
+            "PRAJURIT",
+            "PANGKAT",
+            "NRP",
+            "IURAN",
+            "NOMINAL",
+            "STATUS",
+        ]);
+
+        /*
+         * UNPAID
+         */
+        (result.unpaid || []).forEach(
+            (item) => {
+                rows.push([
+                    item.bill_id,
+                    item.fullname,
+                    item.pangkat,
+                    item.nrp,
+                    item.description,
+                    Number(
+                        item.amount
+                    ),
+                    item.paid_at
+                        ? "MENUNGGU VERIFIKASI"
+                        : "BELUM BAYAR",
+                ]);
+            }
         );
 
-    const workbook =
-        XLSX.utils.book_new();
+        /*
+         * PAID
+         */
+        (result.paid || []).forEach(
+            (item) => {
+                rows.push([
+                    item.bill_id,
+                    item.fullname,
+                    item.pangkat,
+                    item.nrp,
+                    item.description,
+                    Number(
+                        item.amount
+                    ),
+                    "LUNAS",
+                ]);
+            }
+        );
 
-    XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        "Rekap"
-    );
+        const worksheet =
+            XLSX.utils.aoa_to_sheet(
+                rows
+            );
 
-    XLSX.writeFile(
-        workbook,
-        "rekap-kipan-a.xlsx"
-    );
+        const workbook =
+            XLSX.utils.book_new();
+
+        XLSX.utils.book_append_sheet(
+            workbook,
+            worksheet,
+            "Rekap KIPAN A"
+        );
+
+        XLSX.writeFile(
+            workbook,
+            "rekap-kipan-a.xlsx"
+        );
+
+        showAlert(
+            "Rekap berhasil diekspor ke Excel.",
+            "success"
+        );
+    } catch (err) {
+        console.error(err);
+
+        showAlert(
+            err.message ||
+                "Gagal ekspor Excel.",
+            "error"
+        );
+    }
 }
 
 /* =========================================================
@@ -1727,53 +1961,43 @@ function printReport() {
 }
 
 /* =========================================================
-   FORMAT RUPIAH
+   AUTO REFRESH ADMIN
 ========================================================= */
 
-function formatRupiah(
-    value
-) {
-    const number =
-        Number(value) || 0;
+let adminRefreshTimer = null;
 
-    return (
-        "Rp " +
-        number.toLocaleString(
-            "id-ID"
-        )
-    );
+function startAdminRefresh() {
+    stopAdminRefresh();
+
+    adminRefreshTimer =
+        setInterval(() => {
+            const section =
+                document.getElementById(
+                    "sec-admin"
+                );
+
+            if (
+                section &&
+                section.classList.contains(
+                    "active"
+                )
+            ) {
+                loadAdminData();
+            }
+        }, 15000);
 }
 
-/* =========================================================
-   ESCAPE HTML
-========================================================= */
-
-function escapeHtml(
-    value
-) {
-    return String(
-        value ?? ""
-    )
-        .replaceAll(
-            "&",
-            "&amp;"
-        )
-        .replaceAll(
-            "<",
-            "&lt;"
-        )
-        .replaceAll(
-            ">",
-            "&gt;"
-        )
-        .replaceAll(
-            '"',
-            "&quot;"
-        )
-        .replaceAll(
-            "'",
-            "&#039;"
+function stopAdminRefresh() {
+    if (
+        adminRefreshTimer
+    ) {
+        clearInterval(
+            adminRefreshTimer
         );
+
+        adminRefreshTimer =
+            null;
+    }
 }
 
 /* =========================================================
@@ -1782,7 +2006,7 @@ function escapeHtml(
 
 document.addEventListener(
     "DOMContentLoaded",
-    () => {
+    async () => {
         updateNavVisibility();
 
         const token =
@@ -1806,10 +2030,46 @@ document.addEventListener(
                     JSON.parse(
                         userJson
                     );
-            } catch {
+            } catch (err) {
                 logout();
                 return;
             }
+
+            /*
+             * Cek sesi ke server.
+             */
+            try {
+                const result =
+                    await apiRequest(
+                        "/api/me"
+                    );
+
+                if (
+                    result.user
+                ) {
+                    localStorage.setItem(
+                        "user",
+                        JSON.stringify(
+                            result.user
+                        )
+                    );
+
+                    user =
+                        result.user;
+                }
+            } catch (err) {
+                console.warn(
+                    "[SESSION]",
+                    err.message
+                );
+
+                /*
+                 * Jangan langsung hapus token
+                 * kalau hanya ada masalah jaringan.
+                 */
+            }
+
+            updateNavVisibility();
 
             if (
                 user.role ===
@@ -1818,6 +2078,8 @@ document.addEventListener(
                 navigate(
                     "sec-admin"
                 );
+
+                startAdminRefresh();
             } else {
                 navigate(
                     "sec-dashboard"
@@ -1832,46 +2094,23 @@ document.addEventListener(
 );
 
 /* =========================================================
-   AUTO REFRESH ADMIN
+   CLOSE MODAL WHEN CLICK OUTSIDE
 ========================================================= */
 
-setInterval(() => {
-    const token =
-        localStorage.getItem(
-            "token"
-        );
-
-    const userJson =
-        localStorage.getItem(
-            "user"
-        );
-
-    if (!token || !userJson) {
-        return;
-    }
-
-    try {
-        const user =
-            JSON.parse(
-                userJson
-            );
-
-        const adminSection =
+document.addEventListener(
+    "click",
+    (event) => {
+        const modal =
             document.getElementById(
-                "sec-admin"
+                "modal-qris"
             );
 
         if (
-            user.role ===
-                "admin" &&
-            adminSection &&
-            adminSection.classList.contains(
-                "active"
-            )
+            modal &&
+            event.target ===
+                modal
         ) {
-            loadAdminData();
+            closeQris();
         }
-    } catch {
-        // abaikan
     }
-}, 15000);
+);
