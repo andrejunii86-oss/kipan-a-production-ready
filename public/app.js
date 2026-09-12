@@ -1,166 +1,65 @@
 /* =========================================================
-   KIPAN A - APP.JS
-   FRONTEND + API CONNECTION
+   KIPAN A - FRONTEND
 ========================================================= */
 
-"use strict";
+let adminData = null;
+let memberData = null;
+let currentPaymentId = null;
 
 /* =========================================================
-   GLOBAL STATE
+   HELPER API
 ========================================================= */
 
-let adminData = {
-    users: [],
-    bills: [],
-    payments: [],
-    paymentConfig: null,
-    stats: {
-        totalMembers: 0,
-        totalLunas: 0,
-        totalMenunggak: 0,
-        totalKas: 0
-    }
-};
-
-let memberData = {
-    bills: [],
-    paymentConfig: null
-};
-
-/* =========================================================
-   DOM READY
-========================================================= */
-
-document.addEventListener(
-    "DOMContentLoaded",
-    () => {
-
-        setupLoginForm();
-        setupRegisterForm();
-        setupSettingsForm();
-        setupAdminBillForm();
-        setupPaymentConfigForm();
-        setupAdminEditForm();
-
-        updateNavVisibility();
-
-        const token =
-            localStorage.getItem("token");
-
-        const userJson =
-            localStorage.getItem("user");
-
-        if (
-            token &&
-            userJson
-        ) {
-            try {
-
-                const user =
-                    JSON.parse(userJson);
-
-                if (
-                    user.role === "admin"
-                ) {
-                    navigate("sec-admin");
-                } else {
-                    navigate("sec-dashboard");
-                }
-
-            } catch (err) {
-
-                console.error(
-                    "Local user error:",
-                    err
-                );
-
-                logout(false);
-            }
-
-        } else {
-
-            navigate(
-                "sec-auth",
-                false
-            );
-        }
-    }
-);
-
-/* =========================================================
-   API HELPER
-========================================================= */
-
-async function apiFetch(
-    url,
-    options = {}
-) {
-
-    const token =
-        localStorage.getItem("token");
+async function apiFetch(url, options = {}) {
+    const token = localStorage.getItem("token");
 
     const headers = {
-        ...(options.headers || {})
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
     };
 
-    if (
-        options.body &&
-        !headers["Content-Type"]
-    ) {
-        headers["Content-Type"] =
-            "application/json";
-    }
-
     if (token) {
-        headers.Authorization =
-            `Bearer ${token}`;
+        headers.Authorization = `Bearer ${token}`;
     }
 
-    const response =
-        await fetch(
-            url,
-            {
-                ...options,
-                headers
-            }
-        );
+    const response = await fetch(url, {
+        ...options,
+        headers,
+    });
 
-    let data = null;
+    let data;
 
     try {
-        data =
-            await response.json();
-    } catch (_) {
-        data = null;
+        data = await response.json();
+    } catch {
+        data = {
+            success: false,
+            message: "Server mengembalikan data tidak valid.",
+        };
     }
 
-    if (
-        response.status === 401 &&
-        token
-    ) {
+    if (response.status === 401) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
 
         updateNavVisibility();
 
-        if (
-            typeof navigate ===
-            "function"
-        ) {
-            navigate(
-                "sec-auth",
-                false
-            );
-        }
+        showAlert(
+            "Sesi login sudah berakhir. Silakan login kembali.",
+            "error"
+        );
+
+        navigate("sec-auth");
+
+        throw new Error(
+            data.message || "Unauthorized"
+        );
     }
 
-    if (!response.ok) {
-
-        const message =
-            data?.message ||
-            `Server error ${response.status}`;
-
-        throw new Error(message);
+    if (!response.ok || data.success === false) {
+        throw new Error(
+            data.message || "Terjadi kesalahan."
+        );
     }
 
     return data;
@@ -170,59 +69,30 @@ async function apiFetch(
    NAVIGATION
 ========================================================= */
 
-function navigate(
-    sectionId,
-    shouldUpdate = true
-) {
-
+function navigate(sectionId) {
     const sections =
-        document.querySelectorAll(
-            ".section-box"
-        );
+        document.querySelectorAll(".section-box");
 
-    sections.forEach(
-        (section) => {
-            section.classList.remove(
-                "active"
-            );
-        }
-    );
+    sections.forEach((section) => {
+        section.classList.remove("active");
+    });
 
     const target =
-        document.getElementById(
-            sectionId
-        );
+        document.getElementById(sectionId);
 
-    if (!target) {
-        return;
+    if (target) {
+        target.classList.add("active");
     }
 
-    target.classList.add(
-        "active"
-    );
-
-    if (!shouldUpdate) {
-        return;
-    }
-
-    if (
-        sectionId ===
-        "sec-dashboard"
-    ) {
+    if (sectionId === "sec-dashboard") {
         loadMemberDashboard();
     }
 
-    if (
-        sectionId ===
-        "sec-admin"
-    ) {
+    if (sectionId === "sec-admin") {
         loadAdminData();
     }
 
-    if (
-        sectionId ===
-        "sec-settings"
-    ) {
+    if (sectionId === "sec-settings") {
         loadUserSettingsForm();
     }
 }
@@ -232,7 +102,6 @@ function navigate(
 ========================================================= */
 
 function updateNavVisibility() {
-
     const token =
         localStorage.getItem("token");
 
@@ -240,103 +109,77 @@ function updateNavVisibility() {
         localStorage.getItem("user");
 
     const navAuth =
-        document.getElementById(
-            "nav-auth"
-        );
+        document.getElementById("nav-auth");
 
     const navDashboard =
-        document.getElementById(
-            "nav-dashboard"
-        );
+        document.getElementById("nav-dashboard");
 
     const navSettings =
-        document.getElementById(
-            "nav-settings"
-        );
+        document.getElementById("nav-settings");
 
     const navAdmin =
-        document.getElementById(
-            "nav-admin"
-        );
+        document.getElementById("nav-admin");
 
     const navLogout =
-        document.getElementById(
-            "nav-logout"
-        );
+        document.getElementById("nav-logout");
 
-    if (
-        token &&
-        userJson
-    ) {
-
+    if (token && userJson) {
         let user;
 
         try {
-            user =
-                JSON.parse(
-                    userJson
-                );
-        } catch (_) {
-            return;
+            user = JSON.parse(userJson);
+        } catch {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            return updateNavVisibility();
         }
 
-        if (navAuth) {
-            navAuth.style.display =
-                "none";
-        }
+        if (navAuth)
+            navAuth.style.display = "none";
 
-        if (navDashboard) {
+        if (navDashboard)
             navDashboard.style.display =
                 "inline-block";
-        }
 
-        if (navSettings) {
+        if (navSettings)
             navSettings.style.display =
                 "inline-block";
-        }
 
-        if (navLogout) {
+        if (navLogout)
             navLogout.style.display =
                 "inline-block";
-        }
 
         if (
-            navAdmin &&
             user.role === "admin"
         ) {
-            navAdmin.style.display =
-                "inline-block";
-        } else if (navAdmin) {
-            navAdmin.style.display =
-                "none";
+            if (navAdmin)
+                navAdmin.style.display =
+                    "inline-block";
+        } else {
+            if (navAdmin)
+                navAdmin.style.display =
+                    "none";
         }
-
     } else {
-
-        if (navAuth) {
+        if (navAuth)
             navAuth.style.display =
                 "inline-block";
-        }
 
-        if (navDashboard) {
+        if (navDashboard)
             navDashboard.style.display =
                 "none";
-        }
 
-        if (navSettings) {
+        if (navSettings)
             navSettings.style.display =
                 "none";
-        }
 
-        if (navAdmin) {
+        if (navAdmin)
             navAdmin.style.display =
                 "none";
-        }
 
-        if (navLogout) {
+        if (navLogout)
             navLogout.style.display =
                 "none";
-        }
     }
 }
 
@@ -344,65 +187,39 @@ function updateNavVisibility() {
    LOGIN
 ========================================================= */
 
-function setupLoginForm() {
+const formLogin =
+    document.getElementById("form-login");
 
-    const form =
-        document.getElementById(
-            "form-login"
-        );
-
-    if (!form) {
-        return;
-    }
-
-    form.addEventListener(
+if (formLogin) {
+    formLogin.addEventListener(
         "submit",
-        async (event) => {
-
-            event.preventDefault();
+        async (e) => {
+            e.preventDefault();
 
             const username =
                 document
                     .getElementById(
                         "log-username"
                     )
-                    .value
-                    .trim();
+                    .value.trim();
 
             const password =
-                document
-                    .getElementById(
-                        "log-password"
-                    )
-                    .value;
+                document.getElementById(
+                    "log-password"
+                ).value;
 
             try {
-
-                showAlert(
-                    "Menghubungi markas...",
-                    "success"
-                );
-
                 const result =
                     await apiFetch(
                         "/api/login",
                         {
                             method: "POST",
-                            body:
-                                JSON.stringify({
-                                    username,
-                                    password
-                                })
+                            body: JSON.stringify({
+                                username,
+                                password,
+                            }),
                         }
                     );
-
-                if (
-                    !result.success
-                ) {
-                    throw new Error(
-                        result.message
-                    );
-                }
 
                 localStorage.setItem(
                     "token",
@@ -416,46 +233,33 @@ function setupLoginForm() {
                     )
                 );
 
-                updateNavVisibility();
-
                 showAlert(
-                    "Login berhasil.",
+                    "Login berhasil! Memasuki Markas...",
                     "success"
                 );
 
-                form.reset();
+                updateNavVisibility();
 
-                setTimeout(
-                    () => {
-
-                        if (
-                            result.user
-                                .role ===
-                            "admin"
-                        ) {
-                            navigate(
-                                "sec-admin"
-                            );
-                        } else {
-                            navigate(
-                                "sec-dashboard"
-                            );
-                        }
-
-                    },
-                    300
-                );
-
+                setTimeout(() => {
+                    if (
+                        result.user.role ===
+                        "admin"
+                    ) {
+                        navigate(
+                            "sec-admin"
+                        );
+                    } else {
+                        navigate(
+                            "sec-dashboard"
+                        );
+                    }
+                }, 500);
             } catch (err) {
-
-                console.error(
-                    "[LOGIN]",
-                    err
-                );
+                console.error(err);
 
                 showAlert(
                     err.message ||
-                        "Login gagal.",
+                        "Gagal login.",
                     "error"
                 );
             }
@@ -467,104 +271,76 @@ function setupLoginForm() {
    REGISTER
 ========================================================= */
 
-function setupRegisterForm() {
+const formRegister =
+    document.getElementById(
+        "form-register"
+    );
 
-    const form =
-        document.getElementById(
-            "form-register"
-        );
-
-    if (!form) {
-        return;
-    }
-
-    form.addEventListener(
+if (formRegister) {
+    formRegister.addEventListener(
         "submit",
-        async (event) => {
-
-            event.preventDefault();
+        async (e) => {
+            e.preventDefault();
 
             const fullname =
                 document
                     .getElementById(
                         "reg-fullname"
                     )
-                    .value
-                    .trim();
+                    .value.trim();
 
             const pangkat =
-                document
-                    .getElementById(
-                        "reg-pangkat"
-                    )
-                    .value;
+                document.getElementById(
+                    "reg-pangkat"
+                ).value;
 
             const nrp =
                 document
                     .getElementById(
                         "reg-nrp"
                     )
-                    .value
-                    .trim();
+                    .value.trim();
 
             const username =
                 document
                     .getElementById(
                         "reg-username"
                     )
-                    .value
-                    .trim();
+                    .value.trim();
 
             const password =
-                document
-                    .getElementById(
-                        "reg-password"
-                    )
-                    .value;
+                document.getElementById(
+                    "reg-password"
+                ).value;
 
             try {
-
                 const result =
                     await apiFetch(
                         "/api/register",
                         {
                             method: "POST",
-                            body:
-                                JSON.stringify({
-                                    fullname,
-                                    pangkat,
-                                    nrp,
-                                    username,
-                                    password
-                                })
+                            body: JSON.stringify({
+                                fullname,
+                                pangkat,
+                                nrp,
+                                username,
+                                password,
+                            }),
                         }
                     );
 
-                if (
-                    !result.success
-                ) {
-                    throw new Error(
-                        result.message
-                    );
-                }
-
                 showAlert(
-                    "Personel berhasil didaftarkan. Silakan login.",
+                    result.message,
                     "success"
                 );
 
-                form.reset();
-
+                formRegister.reset();
             } catch (err) {
-
-                console.error(
-                    "[REGISTER]",
-                    err
-                );
+                console.error(err);
 
                 showAlert(
                     err.message ||
-                        "Pendaftaran gagal.",
+                        "Gagal mendaftarkan personel.",
                     "error"
                 );
             }
@@ -576,31 +352,61 @@ function setupRegisterForm() {
    LOGOUT
 ========================================================= */
 
-function logout(
-    showMessage = true
-) {
+function logout() {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
 
-    localStorage.removeItem(
-        "token"
-    );
-
-    localStorage.removeItem(
-        "user"
-    );
+    adminData = null;
+    memberData = null;
 
     updateNavVisibility();
 
-    navigate(
-        "sec-auth",
-        false
-    );
+    navigate("sec-auth");
 
-    if (showMessage) {
-        showAlert(
-            "Berhasil keluar dari Markas.",
-            "success"
+    showAlert(
+        "Berhasil keluar dari Markas.",
+        "success"
+    );
+}
+
+/* =========================================================
+   ALERT
+========================================================= */
+
+function showAlert(message, type) {
+    const alertBox =
+        document.getElementById(
+            "alert-box"
         );
+
+    if (!alertBox) {
+        return;
     }
+
+    alertBox.innerText = message;
+
+    alertBox.style.display = "block";
+
+    if (type === "success") {
+        alertBox.style.background =
+            "#1b4d3e";
+
+        alertBox.style.borderColor =
+            "#2ecc71";
+    } else {
+        alertBox.style.background =
+            "#5c1d1d";
+
+        alertBox.style.borderColor =
+            "#e74c3c";
+    }
+
+    alertBox.style.color = "#fff";
+
+    setTimeout(() => {
+        alertBox.style.display =
+            "none";
+    }, 4000);
 }
 
 /* =========================================================
@@ -608,49 +414,35 @@ function logout(
 ========================================================= */
 
 async function loadMemberDashboard() {
-
-    const userJson =
-        localStorage.getItem("user");
-
-    if (!userJson) {
-        return;
-    }
-
-    let user;
-
     try {
-        user =
-            JSON.parse(userJson);
-    } catch (_) {
-        return;
-    }
-
-    const dashUser =
-        document.getElementById(
-            "dash-user"
-        );
-
-    if (dashUser) {
-        dashUser.innerText =
-            `${user.fullname} (${user.pangkat} - NRP: ${user.nrp})`;
-    }
-
-    try {
-
         const result =
             await apiFetch(
-                "/api/member/dashboard"
+                "/api/member/data"
             );
 
-        memberData =
-            result;
+        memberData = result;
 
-        renderMemberPayments(
-            result.bills || []
+        localStorage.setItem(
+            "user",
+            JSON.stringify(
+                result.user
+            )
         );
 
-    } catch (err) {
+        const dashUser =
+            document.getElementById(
+                "dash-user"
+            );
 
+        if (dashUser) {
+            dashUser.innerText =
+                `${result.user.fullname} (${result.user.pangkat} - NRP: ${result.user.nrp})`;
+        }
+
+        renderMemberBills(
+            result.bills || []
+        );
+    } catch (err) {
         console.error(
             "[MEMBER DASHBOARD]",
             err
@@ -658,38 +450,31 @@ async function loadMemberDashboard() {
 
         showAlert(
             err.message ||
-                "Gagal mengambil tagihan.",
+                "Gagal mengambil data prajurit.",
             "error"
         );
     }
 }
 
 /* =========================================================
-   RENDER MEMBER PAYMENTS
+   MEMBER BILLS
 ========================================================= */
 
-function renderMemberPayments(
-    payments
-) {
-
-    const tbody =
+function renderMemberBills(bills) {
+    const table =
         document.getElementById(
             "member-pay-table"
         );
 
-    if (!tbody) {
-        return;
-    }
+    if (!table) return;
 
-    if (
-        !payments ||
-        payments.length === 0
-    ) {
+    table.innerHTML = "";
 
-        tbody.innerHTML = `
+    if (!bills.length) {
+        table.innerHTML = `
             <tr>
-                <td colspan="5">
-                    BELUM ADA TAGIHAN IURAN
+                <td colspan="5" style="text-align:center;">
+                    Belum ada tagihan iuran.
                 </td>
             </tr>
         `;
@@ -697,139 +482,100 @@ function renderMemberPayments(
         return;
     }
 
-    tbody.innerHTML =
-        payments
-            .map(
-                (payment) => {
+    bills.forEach((bill) => {
+        const row =
+            document.createElement("tr");
 
-                    const status =
-                        String(
-                            payment.status ||
-                            ""
-                        );
+        const statusText =
+            bill.status === "verified"
+                ? "LUNAS"
+                : bill.status ===
+                  "submitted"
+                ? "MENUNGGU VERIFIKASI"
+                : "BELUM BAYAR";
 
-                    let statusText =
-                        "MENUNGGAK";
+        let action = "";
 
-                    if (
-                        status ===
-                        "lunas"
-                    ) {
-                        statusText =
-                            "LUNAS";
-                    }
+        if (
+            bill.status !==
+            "verified"
+        ) {
+            action = `
+                <button
+                    class="btn-action"
+                    onclick="submitPayment(${bill.payment_id})"
+                >
+                    BAYAR / KONFIRMASI
+                </button>
+            `;
+        } else {
+            action = `
+                <span style="color:#2ecc71;font-weight:bold;">
+                    ✓ TERVERIFIKASI
+                </span>
+            `;
+        }
 
-                    if (
-                        status ===
-                        "menunggu_verifikasi"
-                    ) {
-                        statusText =
-                            "MENUNGGU VERIFIKASI";
-                    }
+        row.innerHTML = `
+            <td>${bill.bill_id}</td>
 
-                    let action =
-                        "";
+            <td>
+                ${escapeHtml(
+                    bill.description
+                )}
+            </td>
 
-                    if (
-                        status ===
-                        "menunggak"
-                    ) {
+            <td>
+                ${formatRupiah(
+                    bill.amount
+                )}
+            </td>
 
-                        action = `
-                            <button
-                                type="button"
-                                class="btn-action"
-                                onclick="openQris(${payment.payment_id})"
-                            >
-                                BAYAR
-                            </button>
-                        `;
+            <td>
+                <strong>
+                    ${statusText}
+                </strong>
+            </td>
 
-                    } else if (
-                        status ===
-                        "menunggu_verifikasi"
-                    ) {
+            <td>
+                ${action}
+            </td>
+        `;
 
-                        action = `
-                            <span>
-                                MENUNGGU
-                            </span>
-                        `;
-
-                    } else {
-
-                        action = `
-                            <span>
-                                ✓ SELESAI
-                            </span>
-                        `;
-                    }
-
-                    return `
-                        <tr>
-                            <td>
-                                ${escapeHtml(
-                                    payment.bill_id
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.description
-                                )}
-                            </td>
-
-                            <td>
-                                ${formatRupiah(
-                                    payment.amount
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    statusText
-                                )}
-                            </td>
-
-                            <td>
-                                ${action}
-                            </td>
-                        </tr>
-                    `;
-                }
-            )
-            .join("");
+        table.appendChild(row);
+    });
 }
 
 /* =========================================================
-   QRIS MODAL
+   SUBMIT PAYMENT
 ========================================================= */
 
-function openQris(
-    paymentId
-) {
+async function submitPayment(paymentId) {
+    currentPaymentId =
+        paymentId;
 
-    const payment =
-        memberData.bills.find(
-            (item) =>
-                Number(
-                    item.payment_id
-                ) ===
-                Number(paymentId)
-        );
+    const config =
+        memberData?.payment_config ||
+        {};
 
-    if (!payment) {
+    const bill =
+        (memberData?.bills || [])
+            .find(
+                (item) =>
+                    Number(
+                        item.payment_id
+                    ) ===
+                    Number(paymentId)
+            );
 
+    if (!bill) {
         showAlert(
-            "Data tagihan tidak ditemukan.",
+            "Tagihan tidak ditemukan.",
             "error"
         );
 
         return;
     }
-
-    const config =
-        memberData.paymentConfig;
 
     const modal =
         document.getElementById(
@@ -837,18 +583,24 @@ function openQris(
         );
 
     if (!modal) {
+        await confirmPayment(
+            paymentId
+        );
+
         return;
     }
 
-    const billInfo =
+    const info =
         document.getElementById(
             "qris-bill-info"
         );
 
-    const barcode =
-        document.getElementById(
-            "qris-barcode"
-        );
+    if (info) {
+        info.innerText =
+            `${bill.description} - ${formatRupiah(
+                bill.amount
+            )}`;
+    }
 
     const bankName =
         document.getElementById(
@@ -865,75 +617,55 @@ function openQris(
             "modal-bank-holder"
         );
 
-    if (billInfo) {
-
-        billInfo.innerText =
-            `${payment.description} — ${formatRupiah(payment.amount)}`;
-    }
-
     if (bankName) {
         bankName.innerText =
-            config?.bank_name ||
+            config.bank_name ||
             "-";
     }
 
     if (bankAcc) {
         bankAcc.innerText =
-            config?.account_number ||
+            config.account_number ||
             "-";
     }
 
     if (bankHolder) {
         bankHolder.innerText =
-            config?.account_holder ||
+            config.account_holder ||
             "-";
     }
 
-    /*
-     * Generate QR dari payload.
-     *
-     * QuickChart hanya dipakai sebagai
-     * renderer gambar QR.
-     */
-    if (barcode) {
+    const qrImage =
+        document.getElementById(
+            "qris-barcode"
+        );
 
-        const payload =
-            config?.qris_payload ||
-            "";
-
-        if (payload) {
-
-            barcode.src =
-                "https://quickchart.io/qr" +
-                "?size=300" +
-                "&text=" +
-                encodeURIComponent(
-                    payload
-                );
-
-        } else {
-
-            barcode.removeAttribute(
-                "src"
+    if (
+        qrImage &&
+        config.qris_payload
+    ) {
+        qrImage.src =
+            "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
+            encodeURIComponent(
+                config.qris_payload
             );
-        }
+    } else if (qrImage) {
+        qrImage.removeAttribute(
+            "src"
+        );
     }
 
-    modal.dataset.paymentId =
-        String(paymentId);
-
-    modal.style.display =
-        "flex";
-
-    const radar =
+    const radarText =
         document.getElementById(
             "radar-text"
         );
 
-    if (radar) {
-        radar.innerText =
-            "Menunggu konfirmasi pembayaran...";
+    if (radarText) {
+        radarText.innerText =
+            "Silakan lakukan pembayaran lalu konfirmasi.";
     }
+
+    modal.style.display = "flex";
 }
 
 /* =========================================================
@@ -941,7 +673,6 @@ function openQris(
 ========================================================= */
 
 function closeQris() {
-
     const modal =
         document.getElementById(
             "modal-qris"
@@ -957,59 +688,43 @@ function closeQris() {
    CONFIRM PAYMENT
 ========================================================= */
 
-async function confirmPayment() {
-
-    const modal =
-        document.getElementById(
-            "modal-qris"
+async function confirmPayment(
+    paymentId
+) {
+    const confirmed =
+        window.confirm(
+            "Apakah pembayaran sudah dilakukan?"
         );
 
-    if (!modal) {
-        return;
-    }
-
-    const paymentId =
-        Number(
-            modal.dataset.paymentId
-        );
-
-    if (!paymentId) {
+    if (!confirmed) {
         return;
     }
 
     try {
-
         const result =
             await apiFetch(
-                `/api/member/payments/${paymentId}/request`,
+                "/api/member/pay",
                 {
-                    method: "POST"
+                    method: "POST",
+                    body: JSON.stringify({
+                        payment_id:
+                            paymentId,
+                        note:
+                            "Pembayaran dikonfirmasi oleh prajurit.",
+                    }),
                 }
             );
-
-        if (
-            !result.success
-        ) {
-            throw new Error(
-                result.message
-            );
-        }
 
         closeQris();
 
         showAlert(
-            "Pembayaran dikirim. Tunggu verifikasi Komando.",
+            result.message,
             "success"
         );
 
         await loadMemberDashboard();
-
     } catch (err) {
-
-        console.error(
-            "[CONFIRM PAYMENT]",
-            err
-        );
+        console.error(err);
 
         showAlert(
             err.message ||
@@ -1020,240 +735,38 @@ async function confirmPayment() {
 }
 
 /* =========================================================
-   SETTINGS FORM
-========================================================= */
-
-function setupSettingsForm() {
-
-    const form =
-        document.getElementById(
-            "form-settings"
-        );
-
-    if (!form) {
-        return;
-    }
-
-    form.addEventListener(
-        "submit",
-        async (event) => {
-
-            event.preventDefault();
-
-            const fullname =
-                document
-                    .getElementById(
-                        "set-fullname"
-                    )
-                    .value
-                    .trim();
-
-            const pangkat =
-                document
-                    .getElementById(
-                        "set-pangkat"
-                    )
-                    .value;
-
-            const nrp =
-                document
-                    .getElementById(
-                        "set-nrp"
-                    )
-                    .value
-                    .trim();
-
-            const password =
-                document
-                    .getElementById(
-                        "set-password"
-                    )
-                    .value;
-
-            try {
-
-                const result =
-                    await apiFetch(
-                        "/api/user/profile",
-                        {
-                            method: "PUT",
-                            body:
-                                JSON.stringify({
-                                    fullname,
-                                    pangkat,
-                                    nrp,
-                                    password
-                                })
-                        }
-                    );
-
-                if (
-                    !result.success
-                ) {
-                    throw new Error(
-                        result.message
-                    );
-                }
-
-                if (result.user) {
-
-                    localStorage.setItem(
-                        "user",
-                        JSON.stringify(
-                            result.user
-                        )
-                    );
-                }
-
-                document.getElementById(
-                    "set-password"
-                ).value = "";
-
-                showAlert(
-                    "Profil berhasil diperbarui.",
-                    "success"
-                );
-
-                await loadMemberDashboard();
-
-            } catch (err) {
-
-                console.error(
-                    "[SETTINGS]",
-                    err
-                );
-
-                showAlert(
-                    err.message ||
-                        "Gagal memperbarui profil.",
-                    "error"
-                );
-            }
-        }
-    );
-}
-
-/* =========================================================
-   LOAD SETTINGS
-========================================================= */
-
-async function loadUserSettingsForm() {
-
-    try {
-
-        const result =
-            await apiFetch(
-                "/api/user/profile"
-            );
-
-        if (
-            !result.success ||
-            !result.user
-        ) {
-            return;
-        }
-
-        const user =
-            result.user;
-
-        localStorage.setItem(
-            "user",
-            JSON.stringify(user)
-        );
-
-        const fullname =
-            document.getElementById(
-                "set-fullname"
-            );
-
-        const pangkat =
-            document.getElementById(
-                "set-pangkat"
-            );
-
-        const nrp =
-            document.getElementById(
-                "set-nrp"
-            );
-
-        if (fullname) {
-            fullname.value =
-                user.fullname || "";
-        }
-
-        if (pangkat) {
-            pangkat.value =
-                user.pangkat || "Prada";
-        }
-
-        if (nrp) {
-            nrp.value =
-                user.nrp || "";
-        }
-
-    } catch (err) {
-
-        console.error(
-            "[LOAD SETTINGS]",
-            err
-        );
-    }
-}
-
-/* =========================================================
-   ADMIN LOAD DATA
+   ADMIN DASHBOARD
 ========================================================= */
 
 async function loadAdminData() {
-
     try {
-
         const result =
             await apiFetch(
                 "/api/admin/data"
             );
 
-        if (
-            !result.success
-        ) {
-            throw new Error(
-                result.message
-            );
-        }
-
-        adminData =
-            result;
+        adminData = result;
 
         renderAdminStats(
             result.stats
         );
 
-        renderAdminUsers(
-            result.users || []
+        renderAdminPaymentConfig(
+            result.payment_config
         );
 
-        renderUnpaidPayments(
-            result.payments || []
+        renderAdminTables(
+            result
         );
-
-        renderPaidPayments(
-            result.payments || []
-        );
-
-        fillPaymentConfig(
-            result.paymentConfig
-        );
-
     } catch (err) {
-
         console.error(
-            "[ADMIN DATA]",
+            "[ADMIN DATA ERROR]",
             err
         );
 
         showAlert(
             err.message ||
-                "Gagal memuat data Komando.",
+                "Gagal mengambil data panel Komando.",
             "error"
         );
     }
@@ -1266,574 +779,57 @@ async function loadAdminData() {
 function renderAdminStats(
     stats
 ) {
-
-    stats =
-        stats || {};
-
     const totalMembers =
-        Number(
-            stats.totalMembers || 0
-        );
-
-    const totalLunas =
-        Number(
-            stats.totalLunas || 0
-        );
-
-    const totalMenunggak =
-        Number(
-            stats.totalMenunggak || 0
-        );
-
-    const totalKas =
-        Number(
-            stats.totalKas || 0
-        );
-
-    const totalMembersEl =
         document.getElementById(
             "hud-total-members"
         );
 
-    const lunasEl =
+    const totalLunas =
         document.getElementById(
             "hud-total-lunas"
         );
 
-    const menunggakEl =
+    const totalMenunggak =
         document.getElementById(
             "hud-total-menunggak"
         );
 
-    const kasEl =
+    const totalKas =
         document.getElementById(
             "hud-total-kas"
         );
 
-    if (totalMembersEl) {
-        totalMembersEl.innerText =
-            `${totalMembers} Orang`;
+    if (totalMembers) {
+        totalMembers.innerText =
+            `${stats.total_members || 0} Orang`;
     }
 
-    if (lunasEl) {
-        lunasEl.innerText =
-            `${totalLunas} Tagihan`;
+    if (totalLunas) {
+        totalLunas.innerText =
+            `${stats.total_lunas || 0} Tagihan`;
     }
 
-    if (menunggakEl) {
-        menunggakEl.innerText =
-            `${totalMenunggak} Tagihan`;
+    if (totalMenunggak) {
+        totalMenunggak.innerText =
+            `${stats.total_menunggak || 0} Tagihan`;
     }
 
-    if (kasEl) {
-        kasEl.innerText =
+    if (totalKas) {
+        totalKas.innerText =
             formatRupiah(
-                totalKas
+                stats.total_kas || 0
             );
     }
 }
 
 /* =========================================================
-   ADMIN USER TABLE
+   ADMIN PAYMENT CONFIG
 ========================================================= */
 
-function renderAdminUsers(
-    users
-) {
-
-    const tbody =
-        document.getElementById(
-            "admin-user-table"
-        );
-
-    if (!tbody) {
-        return;
-    }
-
-    if (
-        !users ||
-        users.length === 0
-    ) {
-
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6">
-                    BELUM ADA PERSONEL
-                </td>
-            </tr>
-        `;
-
-        return;
-    }
-
-    tbody.innerHTML =
-        users
-            .map(
-                (user) => {
-
-                    const role =
-                        user.role ===
-                        "admin"
-                            ? "ADMIN"
-                            : "MEMBER";
-
-                    return `
-                        <tr>
-
-                            <td>
-                                ${escapeHtml(
-                                    user.id
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    user.fullname
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    user.pangkat
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    user.nrp
-                                )}
-                            </td>
-
-                            <td>
-                                ${role}
-                            </td>
-
-                            <td>
-
-                                <button
-                                    type="button"
-                                    class="btn-action"
-                                    onclick="editAdminUser(${user.id})"
-                                >
-                                    EDIT
-                                </button>
-
-                                ${
-                                    Number(
-                                        user.id
-                                    ) !==
-                                    getCurrentUserId()
-                                        ? `
-                                            <button
-                                                type="button"
-                                                class="btn-action btn-danger"
-                                                onclick="deleteAdminUser(${user.id})"
-                                            >
-                                                HAPUS
-                                            </button>
-                                        `
-                                        : ""
-                                }
-
-                            </td>
-
-                        </tr>
-                    `;
-                }
-            )
-            .join("");
-}
-
-/* =========================================================
-   ADMIN UNPAID TABLE
-========================================================= */
-
-function renderUnpaidPayments(
-    payments
-) {
-
-    const tbody =
-        document.getElementById(
-            "table-belum-bayar"
-        );
-
-    if (!tbody) {
-        return;
-    }
-
-    const unpaid =
-        payments.filter(
-            (payment) =>
-                payment.status !==
-                "lunas"
-        );
-
-    if (
-        unpaid.length === 0
-    ) {
-
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7">
-                    TIDAK ADA PRAJURIT YANG MENUNGGAK
-                </td>
-            </tr>
-        `;
-
-        return;
-    }
-
-    tbody.innerHTML =
-        unpaid
-            .map(
-                (payment) => {
-
-                    const status =
-                        payment.status ===
-                        "menunggu_verifikasi"
-                            ? "MENUNGGU VERIFIKASI"
-                            : "MENUNGGAK";
-
-                    let action = "";
-
-                    if (
-                        payment.status ===
-                        "menunggu_verifikasi"
-                    ) {
-
-                        action = `
-                            <button
-                                type="button"
-                                class="btn-action"
-                                onclick="verifyPayment(${payment.id})"
-                            >
-                                VERIFIKASI LUNAS
-                            </button>
-                        `;
-
-                    } else {
-
-                        action = `
-                            <span>
-                                BELUM BAYAR
-                            </span>
-                        `;
-                    }
-
-                    return `
-                        <tr>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.id
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.fullname
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.nrp
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.description
-                                )}
-                            </td>
-
-                            <td>
-                                ${formatRupiah(
-                                    payment.amount
-                                )}
-                            </td>
-
-                            <td>
-                                ${status}
-                            </td>
-
-                            <td>
-                                ${action}
-                            </td>
-
-                        </tr>
-                    `;
-                }
-            )
-            .join("");
-}
-
-/* =========================================================
-   ADMIN PAID TABLE
-========================================================= */
-
-function renderPaidPayments(
-    payments
-) {
-
-    const tbody =
-        document.getElementById(
-            "table-sudah-bayar"
-        );
-
-    if (!tbody) {
-        return;
-    }
-
-    const paid =
-        payments.filter(
-            (payment) =>
-                payment.status ===
-                "lunas"
-        );
-
-    if (
-        paid.length === 0
-    ) {
-
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6">
-                    BELUM ADA PEMBAYARAN LUNAS
-                </td>
-            </tr>
-        `;
-
-        return;
-    }
-
-    tbody.innerHTML =
-        paid
-            .map(
-                (payment) => {
-
-                    return `
-                        <tr>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.id
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.fullname
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.nrp
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    payment.description
-                                )}
-                            </td>
-
-                            <td>
-                                ${formatRupiah(
-                                    payment.amount
-                                )}
-                            </td>
-
-                            <td>
-                                LUNAS
-                            </td>
-
-                        </tr>
-                    `;
-                }
-            )
-            .join("");
-}
-
-/* =========================================================
-   ADMIN VERIFY
-========================================================= */
-
-async function verifyPayment(
-    paymentId
-) {
-
-    if (
-        !confirm(
-            "Verifikasi pembayaran ini sebagai LUNAS?"
-        )
-    ) {
-        return;
-    }
-
-    try {
-
-        const result =
-            await apiFetch(
-                `/api/admin/payments/${paymentId}/verify`,
-                {
-                    method: "PUT"
-                }
-            );
-
-        if (
-            !result.success
-        ) {
-            throw new Error(
-                result.message
-            );
-        }
-
-        showAlert(
-            "Pembayaran berhasil diverifikasi.",
-            "success"
-        );
-
-        await loadAdminData();
-
-    } catch (err) {
-
-        console.error(
-            "[VERIFY]",
-            err
-        );
-
-        showAlert(
-            err.message ||
-                "Gagal memverifikasi pembayaran.",
-            "error"
-        );
-    }
-}
-
-/* =========================================================
-   PAYMENT CONFIG FORM
-========================================================= */
-
-function setupPaymentConfigForm() {
-
-    const form =
-        document.getElementById(
-            "form-config-payment"
-        );
-
-    if (!form) {
-        return;
-    }
-
-    form.addEventListener(
-        "submit",
-        async (event) => {
-
-            event.preventDefault();
-
-            const bank_name =
-                document
-                    .getElementById(
-                        "cfg-bank-name"
-                    )
-                    .value
-                    .trim();
-
-            const account_number =
-                document
-                    .getElementById(
-                        "cfg-account-number"
-                    )
-                    .value
-                    .trim();
-
-            const account_holder =
-                document
-                    .getElementById(
-                        "cfg-account-holder"
-                    )
-                    .value
-                    .trim();
-
-            const qris_nmid =
-                document
-                    .getElementById(
-                        "cfg-qris-nmid"
-                    )
-                    .value
-                    .trim();
-
-            const qris_payload =
-                document
-                    .getElementById(
-                        "cfg-qris-payload"
-                    )
-                    .value
-                    .trim();
-
-            try {
-
-                const result =
-                    await apiFetch(
-                        "/api/admin/payment-config",
-                        {
-                            method: "POST",
-                            body:
-                                JSON.stringify({
-                                    bank_name,
-                                    account_number,
-                                    account_holder,
-                                    qris_nmid,
-                                    qris_payload
-                                })
-                        }
-                    );
-
-                if (
-                    !result.success
-                ) {
-                    throw new Error(
-                        result.message
-                    );
-                }
-
-                showAlert(
-                    "Rekening dan QRIS berhasil disimpan.",
-                    "success"
-                );
-
-                await loadAdminData();
-
-            } catch (err) {
-
-                console.error(
-                    "[PAYMENT CONFIG]",
-                    err
-                );
-
-                showAlert(
-                    err.message ||
-                        "Gagal menyimpan rekening.",
-                    "error"
-                );
-            }
-        }
-    );
-}
-
-/* =========================================================
-   FILL PAYMENT CONFIG
-========================================================= */
-
-function fillPaymentConfig(
+function renderAdminPaymentConfig(
     config
 ) {
-
-    if (!config) {
-        return;
-    }
+    if (!config) return;
 
     const bankName =
         document.getElementById(
@@ -1860,140 +856,397 @@ function fillPaymentConfig(
             "cfg-qris-payload"
         );
 
-    if (bankName) {
+    if (bankName)
         bankName.value =
             config.bank_name || "";
-    }
 
-    if (accountNumber) {
+    if (accountNumber)
         accountNumber.value =
             config.account_number || "";
-    }
 
-    if (accountHolder) {
+    if (accountHolder)
         accountHolder.value =
             config.account_holder || "";
-    }
 
-    if (qrisNmid) {
+    if (qrisNmid)
         qrisNmid.value =
             config.qris_nmid || "";
-    }
 
-    if (qrisPayload) {
+    if (qrisPayload)
         qrisPayload.value =
             config.qris_payload || "";
+}
+
+/* =========================================================
+   ADMIN TABLES
+========================================================= */
+
+function renderAdminTables(
+    data
+) {
+    renderUnpaidTable(
+        data.payments || []
+    );
+
+    renderPaidTable(
+        data.payments || []
+    );
+
+    renderUsersTable(
+        data.users || []
+    );
+}
+
+/* =========================================================
+   UNPAID TABLE
+========================================================= */
+
+function renderUnpaidTable(
+    payments
+) {
+    const table =
+        document.getElementById(
+            "table-belum-bayar"
+        );
+
+    if (!table) return;
+
+    table.innerHTML = "";
+
+    const unpaid =
+        payments.filter(
+            (payment) =>
+                payment.status !==
+                "verified"
+        );
+
+    if (!unpaid.length) {
+        table.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align:center;">
+                    Tidak ada prajurit yang menunggak.
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    unpaid.forEach(
+        (payment) => {
+            const row =
+                document.createElement(
+                    "tr"
+                );
+
+            const action =
+                payment.status ===
+                    "submitted"
+                    ? `
+                    <button
+                        class="btn-action"
+                        onclick="verifyPayment(${payment.payment_id})"
+                    >
+                        VERIFIKASI
+                    </button>
+                `
+                    : `
+                    <span style="color:#ffcc00;">
+                        BELUM BAYAR
+                    </span>
+                `;
+
+            row.innerHTML = `
+                <td>
+                    ${payment.payment_id}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        payment.fullname
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        payment.nrp
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        payment.description
+                    )}
+                </td>
+
+                <td>
+                    ${formatRupiah(
+                        payment.amount
+                    )}
+                </td>
+
+                <td>
+                    ${payment.status}
+                </td>
+
+                <td>
+                    ${action}
+                </td>
+            `;
+
+            table.appendChild(row);
+        }
+    );
+}
+
+/* =========================================================
+   PAID TABLE
+========================================================= */
+
+function renderPaidTable(
+    payments
+) {
+    const table =
+        document.getElementById(
+            "table-sudah-bayar"
+        );
+
+    if (!table) return;
+
+    table.innerHTML = "";
+
+    const paid =
+        payments.filter(
+            (payment) =>
+                payment.status ===
+                "verified"
+        );
+
+    if (!paid.length) {
+        table.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align:center;">
+                    Belum ada pembayaran terverifikasi.
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    paid.forEach(
+        (payment) => {
+            const row =
+                document.createElement(
+                    "tr"
+                );
+
+            row.innerHTML = `
+                <td>
+                    ${payment.payment_id}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        payment.fullname
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        payment.nrp
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        payment.description
+                    )}
+                </td>
+
+                <td>
+                    ${formatRupiah(
+                        payment.amount
+                    )}
+                </td>
+
+                <td style="color:#2ecc71;font-weight:bold;">
+                    ✓ LUNAS
+                </td>
+            `;
+
+            table.appendChild(row);
+        }
+    );
+}
+
+/* =========================================================
+   USERS TABLE
+========================================================= */
+
+function renderUsersTable(
+    users
+) {
+    const table =
+        document.getElementById(
+            "admin-user-table"
+        );
+
+    if (!table) return;
+
+    table.innerHTML = "";
+
+    if (!users.length) {
+        table.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align:center;">
+                    Belum ada anggota.
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    users.forEach((user) => {
+        const row =
+            document.createElement(
+                "tr"
+            );
+
+        row.innerHTML = `
+            <td>
+                ${user.id}
+            </td>
+
+            <td>
+                ${escapeHtml(
+                    user.fullname
+                )}
+            </td>
+
+            <td>
+                ${escapeHtml(
+                    user.pangkat
+                )}
+            </td>
+
+            <td>
+                ${escapeHtml(
+                    user.nrp
+                )}
+            </td>
+
+            <td>
+                ${user.role}
+            </td>
+
+            <td>
+                <button
+                    class="btn-action"
+                    onclick="editAdminUser(${user.id})"
+                >
+                    EDIT
+                </button>
+            </td>
+        `;
+
+        table.appendChild(row);
+    });
+}
+
+/* =========================================================
+   VERIFY PAYMENT
+========================================================= */
+
+async function verifyPayment(
+    paymentId
+) {
+    const confirmed =
+        window.confirm(
+            "Verifikasi pembayaran ini sebagai LUNAS?"
+        );
+
+    if (!confirmed) return;
+
+    try {
+        const result =
+            await apiFetch(
+                `/api/admin/payments/${paymentId}/verify`,
+                {
+                    method: "POST",
+                }
+            );
+
+        showAlert(
+            result.message,
+            "success"
+        );
+
+        await loadAdminData();
+    } catch (err) {
+        console.error(err);
+
+        showAlert(
+            err.message ||
+                "Gagal memverifikasi pembayaran.",
+            "error"
+        );
     }
 }
 
 /* =========================================================
-   ADMIN BILL FORM
+   CREATE BILL
 ========================================================= */
 
-function setupAdminBillForm() {
+const formCreateBill =
+    document.getElementById(
+        "form-admin-create-bill"
+    );
 
-    const form =
-        document.getElementById(
-            "form-admin-create-bill"
-        );
-
-    if (!form) {
-        return;
-    }
-
-    form.addEventListener(
+if (formCreateBill) {
+    formCreateBill.addEventListener(
         "submit",
-        async (event) => {
-
-            event.preventDefault();
+        async (e) => {
+            e.preventDefault();
 
             const description =
                 document
                     .getElementById(
                         "bill-desc"
                     )
-                    .value
-                    .trim();
+                    .value.trim();
 
             const amount =
                 Number(
-                    document
-                        .getElementById(
-                            "bill-amount"
-                        )
-                        .value
+                    document.getElementById(
+                        "bill-amount"
+                    ).value
                 );
-
-            if (
-                !description ||
-                !amount ||
-                amount <= 0
-            ) {
-
-                showAlert(
-                    "Nama iuran dan nominal wajib diisi.",
-                    "error"
-                );
-
-                return;
-            }
-
-            const memberCount =
-                Number(
-                    adminData
-                        ?.stats
-                        ?.totalMembers ||
-                    0
-                );
-
-            const confirmation =
-                confirm(
-                    `Terbitkan iuran "${description}" sebesar ${formatRupiah(amount)} kepada ${memberCount} member?`
-                );
-
-            if (!confirmation) {
-                return;
-            }
 
             try {
-
                 const result =
                     await apiFetch(
                         "/api/admin/bills",
                         {
                             method: "POST",
-                            body:
-                                JSON.stringify({
-                                    description,
-                                    amount
-                                })
+                            body: JSON.stringify({
+                                description,
+                                amount,
+                            }),
                         }
                     );
 
-                if (
-                    !result.success
-                ) {
-                    throw new Error(
-                        result.message
-                    );
-                }
-
                 showAlert(
-                    result.message ||
-                        "Iuran berhasil diterbitkan.",
+                    result.message,
                     "success"
                 );
 
-                form.reset();
+                formCreateBill.reset();
 
                 await loadAdminData();
-
             } catch (err) {
-
-                console.error(
-                    "[CREATE BILL]",
-                    err
-                );
+                console.error(err);
 
                 showAlert(
                     err.message ||
@@ -2006,37 +1259,328 @@ function setupAdminBillForm() {
 }
 
 /* =========================================================
-   ADMIN EDIT USER
+   PAYMENT CONFIG FORM
 ========================================================= */
 
-function setupAdminEditForm() {
+const formPaymentConfig =
+    document.getElementById(
+        "form-config-payment"
+    );
 
-    const form =
-        document.getElementById(
-            "form-admin-edit-user"
+if (formPaymentConfig) {
+    formPaymentConfig.addEventListener(
+        "submit",
+        async (e) => {
+            e.preventDefault();
+
+            const bank_name =
+                document.getElementById(
+                    "cfg-bank-name"
+                ).value.trim();
+
+            const account_number =
+                document.getElementById(
+                    "cfg-account-number"
+                ).value.trim();
+
+            const account_holder =
+                document.getElementById(
+                    "cfg-account-holder"
+                ).value.trim();
+
+            const qris_nmid =
+                document.getElementById(
+                    "cfg-qris-nmid"
+                ).value.trim();
+
+            const qris_payload =
+                document.getElementById(
+                    "cfg-qris-payload"
+                ).value.trim();
+
+            try {
+                const result =
+                    await apiFetch(
+                        "/api/admin/payment-config",
+                        {
+                            method: "POST",
+                            body: JSON.stringify({
+                                bank_name,
+                                account_number,
+                                account_holder,
+                                qris_nmid,
+                                qris_payload,
+                            }),
+                        }
+                    );
+
+                showAlert(
+                    result.message,
+                    "success"
+                );
+
+                await loadAdminData();
+            } catch (err) {
+                console.error(err);
+
+                showAlert(
+                    err.message ||
+                        "Gagal menyimpan rekening.",
+                    "error"
+                );
+            }
+        }
+    );
+}
+
+/* =========================================================
+   SETTINGS
+========================================================= */
+
+function loadUserSettingsForm() {
+    const userJson =
+        localStorage.getItem(
+            "user"
         );
 
-    if (!form) {
+    if (!userJson) return;
+
+    let user;
+
+    try {
+        user = JSON.parse(
+            userJson
+        );
+    } catch {
         return;
     }
 
-    form.addEventListener(
+    const fullnameInput =
+        document.getElementById(
+            "set-fullname"
+        );
+
+    const pangkatSelect =
+        document.getElementById(
+            "set-pangkat"
+        );
+
+    const nrpInput =
+        document.getElementById(
+            "set-nrp"
+        );
+
+    if (fullnameInput)
+        fullnameInput.value =
+            user.fullname || "";
+
+    if (pangkatSelect)
+        pangkatSelect.value =
+            user.pangkat || "Prada";
+
+    if (nrpInput)
+        nrpInput.value =
+            user.nrp || "";
+}
+
+/* =========================================================
+   SETTINGS FORM
+========================================================= */
+
+const formSettings =
+    document.getElementById(
+        "form-settings"
+    );
+
+if (formSettings) {
+    formSettings.addEventListener(
         "submit",
-        async (event) => {
-
-            event.preventDefault();
-
-            const id =
-                Number(
-                    document.getElementById(
-                        "adm-user-id"
-                    ).value
-                );
+        async (e) => {
+            e.preventDefault();
 
             const fullname =
+                document
+                    .getElementById(
+                        "set-fullname"
+                    )
+                    .value.trim();
+
+            const pangkat =
                 document.getElementById(
-                    "adm-user-fullname"
-                ).value.trim();
+                    "set-pangkat"
+                ).value;
+
+            const nrp =
+                document
+                    .getElementById(
+                        "set-nrp"
+                    )
+                    .value.trim();
+
+            const password =
+                document.getElementById(
+                    "set-password"
+                ).value;
+
+            try {
+                const result =
+                    await apiFetch(
+                        "/api/user/profile",
+                        {
+                            method: "PUT",
+                            body: JSON.stringify({
+                                fullname,
+                                pangkat,
+                                nrp,
+                                password,
+                            }),
+                        }
+                    );
+
+                localStorage.setItem(
+                    "user",
+                    JSON.stringify(
+                        result.user
+                    )
+                );
+
+                document.getElementById(
+                    "set-password"
+                ).value = "";
+
+                showAlert(
+                    result.message,
+                    "success"
+                );
+
+                updateNavVisibility();
+            } catch (err) {
+                console.error(err);
+
+                showAlert(
+                    err.message ||
+                        "Gagal memperbarui profil.",
+                    "error"
+                );
+            }
+        }
+    );
+}
+
+/* =========================================================
+   ADMIN EDIT USER
+========================================================= */
+
+function editAdminUser(
+    userId
+) {
+    if (!adminData) return;
+
+    const user =
+        (adminData.users || [])
+            .find(
+                (item) =>
+                    Number(item.id) ===
+                    Number(userId)
+            );
+
+    if (!user) return;
+
+    const box =
+        document.getElementById(
+            "box-admin-edit-user"
+        );
+
+    const idInput =
+        document.getElementById(
+            "adm-user-id"
+        );
+
+    const fullname =
+        document.getElementById(
+            "adm-user-fullname"
+        );
+
+    const pangkat =
+        document.getElementById(
+            "adm-user-pangkat"
+        );
+
+    const nrp =
+        document.getElementById(
+            "adm-user-nrp"
+        );
+
+    const role =
+        document.getElementById(
+            "adm-user-role"
+        );
+
+    const password =
+        document.getElementById(
+            "adm-user-password"
+        );
+
+    if (idInput)
+        idInput.value =
+            user.id;
+
+    if (fullname)
+        fullname.value =
+            user.fullname || "";
+
+    if (pangkat)
+        pangkat.value =
+            user.pangkat || "Prada";
+
+    if (nrp)
+        nrp.value =
+            user.nrp || "";
+
+    if (role)
+        role.value =
+            user.role || "member";
+
+    if (password)
+        password.value = "";
+
+    if (box) {
+        box.style.display =
+            "block";
+
+        box.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+        });
+    }
+}
+
+/* =========================================================
+   ADMIN EDIT FORM
+========================================================= */
+
+const formAdminEdit =
+    document.getElementById(
+        "form-admin-edit-user"
+    );
+
+if (formAdminEdit) {
+    formAdminEdit.addEventListener(
+        "submit",
+        async (e) => {
+            e.preventDefault();
+
+            const id =
+                document.getElementById(
+                    "adm-user-id"
+                ).value;
+
+            const fullname =
+                document
+                    .getElementById(
+                        "adm-user-fullname"
+                    )
+                    .value.trim();
 
             const pangkat =
                 document.getElementById(
@@ -2044,9 +1588,11 @@ function setupAdminEditForm() {
                 ).value;
 
             const nrp =
-                document.getElementById(
-                    "adm-user-nrp"
-                ).value.trim();
+                document
+                    .getElementById(
+                        "adm-user-nrp"
+                    )
+                    .value.trim();
 
             const role =
                 document.getElementById(
@@ -2059,50 +1605,43 @@ function setupAdminEditForm() {
                 ).value;
 
             try {
-
                 const result =
                     await apiFetch(
                         `/api/admin/users/${id}`,
                         {
                             method: "PUT",
-                            body:
-                                JSON.stringify({
-                                    fullname,
-                                    pangkat,
-                                    nrp,
-                                    role,
-                                    password
-                                })
+                            body: JSON.stringify({
+                                fullname,
+                                pangkat,
+                                nrp,
+                                role,
+                                password,
+                            }),
                         }
                     );
 
-                if (
-                    !result.success
-                ) {
-                    throw new Error(
-                        result.message
-                    );
-                }
-
                 showAlert(
-                    "Data personel berhasil diperbarui.",
+                    result.message,
                     "success"
                 );
 
-                cancelAdminEdit();
+                const box =
+                    document.getElementById(
+                        "box-admin-edit-user"
+                    );
+
+                if (box) {
+                    box.style.display =
+                        "none";
+                }
 
                 await loadAdminData();
-
             } catch (err) {
-
-                console.error(
-                    "[EDIT USER]",
-                    err
-                );
+                console.error(err);
 
                 showAlert(
                     err.message ||
-                        "Gagal memperbarui personel.",
+                        "Gagal mengubah data personel.",
                     "error"
                 );
             }
@@ -2111,396 +1650,80 @@ function setupAdminEditForm() {
 }
 
 /* =========================================================
-   EDIT ADMIN USER
-========================================================= */
-
-function editAdminUser(
-    userId
-) {
-
-    const user =
-        adminData.users.find(
-            (item) =>
-                Number(item.id) ===
-                Number(userId)
-        );
-
-    if (!user) {
-
-        showAlert(
-            "Data personel tidak ditemukan.",
-            "error"
-        );
-
-        return;
-    }
-
-    const box =
-        document.getElementById(
-            "box-admin-edit-user"
-        );
-
-    if (!box) {
-        return;
-    }
-
-    document.getElementById(
-        "adm-user-id"
-    ).value =
-        user.id;
-
-    document.getElementById(
-        "adm-user-fullname"
-    ).value =
-        user.fullname || "";
-
-    document.getElementById(
-        "adm-user-pangkat"
-    ).value =
-        user.pangkat || "Prada";
-
-    document.getElementById(
-        "adm-user-nrp"
-    ).value =
-        user.nrp || "";
-
-    document.getElementById(
-        "adm-user-role"
-    ).value =
-        user.role || "member";
-
-    document.getElementById(
-        "adm-user-password"
-    ).value =
-        "";
-
-    box.style.display =
-        "block";
-
-    box.scrollIntoView({
-        behavior: "smooth",
-        block: "center"
-    });
-}
-
-/* =========================================================
-   CANCEL ADMIN EDIT
-========================================================= */
-
-function cancelAdminEdit() {
-
-    const box =
-        document.getElementById(
-            "box-admin-edit-user"
-        );
-
-    if (box) {
-        box.style.display =
-            "none";
-    }
-
-    const form =
-        document.getElementById(
-            "form-admin-edit-user"
-        );
-
-    if (form) {
-        form.reset();
-    }
-}
-
-/* =========================================================
-   DELETE ADMIN USER
-========================================================= */
-
-async function deleteAdminUser(
-    userId
-) {
-
-    const user =
-        adminData.users.find(
-            (item) =>
-                Number(item.id) ===
-                Number(userId)
-        );
-
-    if (!user) {
-        return;
-    }
-
-    const confirmation =
-        confirm(
-            `Hapus personel ${user.fullname}?`
-        );
-
-    if (!confirmation) {
-        return;
-    }
-
-    try {
-
-        const result =
-            await apiFetch(
-                `/api/admin/users/${userId}`,
-                {
-                    method: "DELETE"
-                }
-            );
-
-        if (
-            !result.success
-        ) {
-            throw new Error(
-                result.message
-            );
-        }
-
-        showAlert(
-            "Personel berhasil dihapus.",
-            "success"
-        );
-
-        await loadAdminData();
-
-    } catch (err) {
-
-        console.error(
-            "[DELETE USER]",
-            err
-        );
-
-        showAlert(
-            err.message ||
-                "Gagal menghapus personel.",
-            "error"
-        );
-    }
-}
-
-/* =========================================================
    EXCEL EXPORT
 ========================================================= */
 
 function exportToExcel() {
+    if (!adminData) {
+        showAlert(
+            "Data admin belum dimuat.",
+            "error"
+        );
+
+        return;
+    }
 
     if (
         typeof XLSX ===
         "undefined"
     ) {
-
         showAlert(
-            "Library Excel belum termuat.",
+            "Library Excel belum tersedia.",
             "error"
         );
 
         return;
     }
 
-    const users =
-        adminData.users || [];
+    const rows =
+        (adminData.payments || [])
+            .map(
+                (payment) => ({
+                    ID:
+                        payment.payment_id,
+                    Prajurit:
+                        payment.fullname,
+                    Pangkat:
+                        payment.pangkat,
+                    NRP:
+                        payment.nrp,
+                    Iuran:
+                        payment.description,
+                    Nominal:
+                        Number(
+                            payment.amount
+                        ),
+                    Status:
+                        payment.status,
+                })
+            );
 
-    const payments =
-        adminData.payments || [];
-
-    /*
-     * SHEET PERSONEL
-     */
-    const userRows =
-        users.map(
-            (user) => ({
-                ID: user.id,
-                "Nama Lengkap":
-                    user.fullname,
-                Pangkat:
-                    user.pangkat,
-                NRP:
-                    user.nrp,
-                Username:
-                    user.username,
-                Role:
-                    user.role
-            })
+    const worksheet =
+        XLSX.utils.json_to_sheet(
+            rows
         );
-
-    /*
-     * SHEET PEMBAYARAN
-     */
-    const paymentRows =
-        payments.map(
-            (payment) => ({
-                ID:
-                    payment.id,
-                Personel:
-                    payment.fullname,
-                Pangkat:
-                    payment.pangkat,
-                NRP:
-                    payment.nrp,
-                Iuran:
-                    payment.description,
-                Nominal:
-                    Number(
-                        payment.amount
-                    ),
-                Status:
-                    payment.status,
-                "Tanggal Bayar":
-                    payment.paid_at || ""
-            })
-        );
-
-    /*
-     * SHEET REKAP
-     */
-    const summaryRows = [
-        {
-            Keterangan:
-                "Total Personel",
-            Nilai:
-                adminData
-                    .stats
-                    .totalMembers
-        },
-        {
-            Keterangan:
-                "Total Tagihan Lunas",
-            Nilai:
-                adminData
-                    .stats
-                    .totalLunas
-        },
-        {
-            Keterangan:
-                "Total Tagihan Menunggak",
-            Nilai:
-                adminData
-                    .stats
-                    .totalMenunggak
-        },
-        {
-            Keterangan:
-                "Total Kas Terkumpul",
-            Nilai:
-                adminData
-                    .stats
-                    .totalKas
-        }
-    ];
 
     const workbook =
         XLSX.utils.book_new();
 
-    const sheetUsers =
-        XLSX.utils.json_to_sheet(
-            userRows
-        );
-
-    const sheetPayments =
-        XLSX.utils.json_to_sheet(
-            paymentRows
-        );
-
-    const sheetSummary =
-        XLSX.utils.json_to_sheet(
-            summaryRows
-        );
-
     XLSX.utils.book_append_sheet(
         workbook,
-        sheetSummary,
-        "REKAP"
-    );
-
-    XLSX.utils.book_append_sheet(
-        workbook,
-        sheetUsers,
-        "PERSONEL"
-    );
-
-    XLSX.utils.book_append_sheet(
-        workbook,
-        sheetPayments,
-        "PEMBAYARAN"
+        worksheet,
+        "Rekap"
     );
 
     XLSX.writeFile(
         workbook,
-        "KIPAN-A-REKAP.xlsx"
-    );
-
-    showAlert(
-        "File Excel berhasil dibuat.",
-        "success"
+        "rekap-kipan-a.xlsx"
     );
 }
 
 /* =========================================================
-   PRINT REPORT
+   PRINT
 ========================================================= */
 
 function printReport() {
-
     window.print();
-}
-
-/* =========================================================
-   ALERT
-========================================================= */
-
-function showAlert(
-    message,
-    type = "success"
-) {
-
-    const alertBox =
-        document.getElementById(
-            "alert-box"
-        );
-
-    if (!alertBox) {
-        return;
-    }
-
-    alertBox.innerText =
-        message;
-
-    alertBox.style.display =
-        "block";
-
-    if (
-        type === "success"
-    ) {
-
-        alertBox.style.background =
-            "#1b4d3e";
-
-        alertBox.style.borderColor =
-            "#2ecc71";
-
-    } else {
-
-        alertBox.style.background =
-            "#5c1d1d";
-
-        alertBox.style.borderColor =
-            "#e74c3c";
-    }
-
-    alertBox.style.color =
-        "#fff";
-
-    clearTimeout(
-        window.__kipanAlertTimer
-    );
-
-    window.__kipanAlertTimer =
-        setTimeout(
-            () => {
-                alertBox.style.display =
-                    "none";
-            },
-            4000
-        );
 }
 
 /* =========================================================
@@ -2510,126 +1733,145 @@ function showAlert(
 function formatRupiah(
     value
 ) {
-
     const number =
-        Number(value || 0);
+        Number(value) || 0;
 
-    return new Intl.NumberFormat(
-        "id-ID",
-        {
-            style: "currency",
-            currency: "IDR",
-            minimumFractionDigits: 0
-        }
-    ).format(number);
+    return (
+        "Rp " +
+        number.toLocaleString(
+            "id-ID"
+        )
+    );
 }
 
 /* =========================================================
-   CURRENT USER ID
+   ESCAPE HTML
 ========================================================= */
 
-function getCurrentUserId() {
+function escapeHtml(
+    value
+) {
+    return String(
+        value ?? ""
+    )
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+}
+
+/* =========================================================
+   INITIALIZATION
+========================================================= */
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+        updateNavVisibility();
+
+        const token =
+            localStorage.getItem(
+                "token"
+            );
+
+        const userJson =
+            localStorage.getItem(
+                "user"
+            );
+
+        if (
+            token &&
+            userJson
+        ) {
+            let user;
+
+            try {
+                user =
+                    JSON.parse(
+                        userJson
+                    );
+            } catch {
+                logout();
+                return;
+            }
+
+            if (
+                user.role ===
+                "admin"
+            ) {
+                navigate(
+                    "sec-admin"
+                );
+            } else {
+                navigate(
+                    "sec-dashboard"
+                );
+            }
+        } else {
+            navigate(
+                "sec-auth"
+            );
+        }
+    }
+);
+
+/* =========================================================
+   AUTO REFRESH ADMIN
+========================================================= */
+
+setInterval(() => {
+    const token =
+        localStorage.getItem(
+            "token"
+        );
 
     const userJson =
         localStorage.getItem(
             "user"
         );
 
-    if (!userJson) {
-        return null;
+    if (!token || !userJson) {
+        return;
     }
 
     try {
-
         const user =
             JSON.parse(
                 userJson
             );
 
-        return Number(
-            user.id
-        );
+        const adminSection =
+            document.getElementById(
+                "sec-admin"
+            );
 
-    } catch (_) {
-
-        return null;
+        if (
+            user.role ===
+                "admin" &&
+            adminSection &&
+            adminSection.classList.contains(
+                "active"
+            )
+        ) {
+            loadAdminData();
+        }
+    } catch {
+        // abaikan
     }
-}
-
-/* =========================================================
-   HTML ESCAPE
-========================================================= */
-
-function escapeHtml(
-    value
-) {
-
-    if (
-        value === null ||
-        value === undefined
-    ) {
-        return "";
-    }
-
-    return String(value)
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-        .replace(
-            /</g,
-            "&lt;"
-        )
-        .replace(
-            />/g,
-            "&gt;"
-        )
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-        .replace(
-            /'/g,
-            "&#039;"
-        );
-}
-
-/* =========================================================
-   GLOBAL FUNCTIONS
-========================================================= */
-
-window.navigate =
-    navigate;
-
-window.logout =
-    logout;
-
-window.openQris =
-    openQris;
-
-window.closeQris =
-    closeQris;
-
-window.confirmPayment =
-    confirmPayment;
-
-window.verifyPayment =
-    verifyPayment;
-
-window.editAdminUser =
-    editAdminUser;
-
-window.deleteAdminUser =
-    deleteAdminUser;
-
-window.cancelAdminEdit =
-    cancelAdminEdit;
-
-window.exportToExcel =
-    exportToExcel;
-
-window.printReport =
-    printReport;
-
-window.showAlert =
-    showAlert;
+}, 15000);
