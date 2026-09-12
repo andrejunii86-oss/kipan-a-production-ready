@@ -201,7 +201,8 @@ async function ensureDatabase() {
             id SERIAL PRIMARY KEY,
             bill_id INTEGER,
             user_id INTEGER,
-            amount NUMERIC(14,2) DEFAULT 0,
+            amount  NUMERIC(14,2) DEFAULT 0,
+            keterangan TEXT DEFAULT '',
             status VARCHAR(30) NOT NULL DEFAULT 'pending',
             payment_method VARCHAR(50) DEFAULT 'bank_transfer',
             paid_at TIMESTAMP WITH TIME ZONE,
@@ -215,6 +216,10 @@ async function ensureDatabase() {
         ALTER TABLE payments
         ADD COLUMN IF NOT EXISTS bill_id INTEGER;
     `);
+    await pool.query(`
+    ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS keterangan TEXT DEFAULT '';
+`);
 
     await pool.query(`
         ALTER TABLE payments
@@ -1177,24 +1182,27 @@ app.post(
             await client.query(
                 `
                 INSERT INTO payments
-                (
-                    bill_id,
-                    user_id,
-                    amount,
-                    status
-                )
-                SELECT
-                    $1,
-                    id,
-                    $2,
-                    'pending'
-                FROM users
-                WHERE role = 'member'
+(
+    bill_id,
+    user_id,
+    amount,
+    keterangan,
+    status
+)
+SELECT
+    $1,
+    id,
+    $2,
+    $3,
+    'pending'
+FROM users
+WHERE role = 'member'
                 `,
                 [
-                    bill.id,
-                    amount,
-                ]
+    bill.id,
+    amount,
+    description,
+]
             );
 
             await client.query("COMMIT");
